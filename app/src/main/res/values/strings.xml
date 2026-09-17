@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">侧键功能</string>
+    <string name="xposed_description">为一加侧键配置单击、双击和长按动作</string>
+</resources>
