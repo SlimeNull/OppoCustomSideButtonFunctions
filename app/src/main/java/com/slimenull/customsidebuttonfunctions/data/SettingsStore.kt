@@ -80,7 +80,7 @@ object SettingsStore {
         enabled = preferences.getBoolean(KEY_ENABLED, true),
         keyCode = preferences.getInt(KEY_KEY_CODE, 735),
         inputDevicePath = preferences.getString(KEY_INPUT_PATH, "/dev/input/event0") ?: "/dev/input/event0",
-        longPressMs = preferences.getLong(KEY_LONG_PRESS_MS, 650L).coerceIn(200L, 10_000L),
+        longPressMs = preferences.getLong(KEY_LONG_PRESS_MS, 350L).coerceIn(200L, 10_000L),
         doubleClickWindowMs = preferences.getLong(KEY_DOUBLE_WINDOW_MS, 280L).coerceIn(80L, 2_000L),
         singleAction = action(preferences.getString(KEY_SINGLE_ACTION, null)),
         doubleAction = action(preferences.getString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
@@ -89,10 +89,10 @@ object SettingsStore {
         doubleCustom = readCustom(preferences, "double_"),
         longCustom = readCustom(preferences, "long_"),
         vibrationEnabled = preferences.getBoolean(KEY_VIBRATION_ENABLED, true),
-        vibrationDurationMs = preferences.getLong(KEY_VIBRATION_DURATION_MS, 40L).coerceIn(1L, 2_000L),
-        toastEnabled = preferences.getBoolean(KEY_TOAST_ENABLED, true),
+        vibrationDurationMs = preferences.getLong(KEY_VIBRATION_DURATION_MS, 50L).coerceIn(1L, 2_000L),
+        toastEnabled = preferences.getBoolean(KEY_TOAST_ENABLED, false),
         toastText = preferences.getString(KEY_TOAST_TEXT, "侧键操作已执行") ?: "侧键操作已执行",
-        wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, true)
+        wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, false)
     )
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =

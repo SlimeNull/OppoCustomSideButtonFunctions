@@ -62,7 +62,7 @@ internal class ActionExecutor {
                 ActionType.XIAOBU_SHORTCUT -> executeXiaobuShortcut(currentContext, custom.xiaobuShortcutId)
                 ActionType.CUSTOM_ACTIVITY -> startCustomActivity(currentContext, custom)
                 ActionType.CUSTOM_URL -> openUrl(currentContext, custom.urlScheme)
-                ActionType.SHELL_COMMAND -> executeShell(currentContext, custom.shellCommand)
+                ActionType.SHELL_COMMAND -> executeShell(custom.shellCommand)
                 ActionType.NONE -> return
             }
             feedback(currentContext, action, settings)
@@ -139,8 +139,6 @@ internal class ActionExecutor {
 
     private fun requestScreenshot(context: Context) {
         if (requestScreenshotWithHelper(context)) return
-        if (relayShell(context, "service call color_screenshot 1")) return
-
         val statusBar = context.getSystemService("statusbar")
         val requested = runCatching {
             val method = statusBar?.javaClass?.declaredMethods?.firstOrNull {
@@ -161,10 +159,12 @@ internal class ActionExecutor {
             true
         }.getOrDefault(false)
         if (!requested) {
-            context.sendBroadcast(
-                Intent("com.android.systemui.action.SCREENSHOT").setPackage("com.android.systemui")
-            )
-            context.sendBroadcast(Intent("android.intent.action.SCREENSHOT").setPackage("com.android.systemui"))
+            executeShell("service call color_screenshot 1") {
+                context.sendBroadcast(
+                    Intent("com.android.systemui.action.SCREENSHOT").setPackage("com.android.systemui")
+                )
+                context.sendBroadcast(Intent("android.intent.action.SCREENSHOT").setPackage("com.android.systemui"))
+            }
         }
     }
 
@@ -211,7 +211,7 @@ internal class ActionExecutor {
             CommonAction.WECHAT_SCAN -> startWechatShortcut(context, "launch_type_scan_qrcode")
             CommonAction.ALIPAY_PAY -> openUrl(context, "alipays://platformapi/startapp?saId=20000056")
             CommonAction.ALIPAY_SCAN -> openUrl(context, "alipays://platformapi/startapp?saId=10000007")
-            CommonAction.FLASH_MEMORY -> startFlashMemory(context)
+            CommonAction.FLASH_MEMORY -> startFlashMemory()
             CommonAction.XIAOBU_MEMORY -> startActivity(context, "com.oplus.aimemory", "com.oplus.aimemory.MainActivity", "")
         }
     }
@@ -253,9 +253,8 @@ internal class ActionExecutor {
         )
     }
 
-    private fun startFlashMemory(context: Context) {
+    private fun startFlashMemory() {
         executeShell(
-            context,
             "am start-foreground-service -a oplus.gleanerservice.intent.action.COLLECT_DATA " +
                 "-n com.oplus.gleanerservice/.flashnotes.business.service.DataCollectService --ei triggerType 1"
         )
@@ -278,33 +277,18 @@ internal class ActionExecutor {
         )
     }
 
-    private fun executeShell(context: Context, command: String) {
+    private fun executeShell(command: String, onFailure: (() -> Unit)? = null) {
         if (command.isBlank()) {
             XposedBridge.log("CustomSideButtonFunctions: shell command is empty")
             return
         }
         Thread {
-            // Match the reference module: Launcher owns the root shell and avoids
-            // system_server's restricted process domain and background limits.
-            relayShell(context, command)
+            if (!ShellCommandRunner.executeAsRoot(command)) onFailure?.invoke()
         }.apply {
             isDaemon = true
             name = "CustomSideButtonShell"
             start()
         }
-    }
-
-    private fun relayShell(context: Context, command: String): Boolean {
-        return runCatching {
-            context.sendBroadcast(
-                Intent(ShellRelayHook.ACTION)
-                    .setPackage(ShellRelayHook.PACKAGE)
-                    .putExtra("cmd", command)
-            )
-            true
-        }.onFailure {
-            XposedBridge.log("CustomSideButtonFunctions: shell relay failed: ${it.message}")
-        }.getOrDefault(false)
     }
 
     private fun feedback(context: Context, action: ActionType, settings: AppSettings) {

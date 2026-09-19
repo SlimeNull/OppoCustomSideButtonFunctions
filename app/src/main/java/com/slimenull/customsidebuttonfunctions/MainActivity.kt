@@ -1,14 +1,24 @@
 package com.slimenull.customsidebuttonfunctions
 
 import android.os.Bundle
-import android.content.Context
-import android.app.AlertDialog
 import android.view.SoundEffectConstants
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -35,26 +46,27 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -68,25 +80,30 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.slimenull.customsidebuttonfunctions.data.SettingsStore
-import com.slimenull.customsidebuttonfunctions.data.ShellRelayContract
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 
 private val AppBackground = Color(0xFFF3F7FD)
 private val AppBlue = Color(0xFF347FE8)
@@ -95,16 +112,46 @@ private val AppBlueSoft = Color(0xFFE7F1FF)
 private val AppText = Color(0xFF152238)
 private val AppMuted = Color(0xFF718198)
 private val AppGreen = Color(0xFF2DAE78)
+private const val PageShadeOpacity = 0.24f
+private const val PageSlideFraction = 0.25f
 
 private val AppColors = lightColorScheme(
     primary = AppBlue,
     onPrimary = Color.White,
+    primaryContainer = AppBlueSoft,
+    onPrimaryContainer = AppBlueDark,
+    inversePrimary = Color(0xFFB3D1FF),
+    secondary = Color(0xFF466A80),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE0EEF4),
+    onSecondaryContainer = Color(0xFF254C61),
+    tertiary = Color(0xFF28765D),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFDDF3E9),
+    onTertiaryContainer = Color(0xFF17513D),
     background = AppBackground,
     onBackground = AppText,
     surface = Color.White,
     onSurface = AppText,
     surfaceVariant = Color(0xFFE9F0F8),
-    onSurfaceVariant = AppMuted
+    onSurfaceVariant = AppMuted,
+    surfaceTint = AppBlue,
+    surfaceBright = Color.White,
+    surfaceDim = Color(0xFFE8EEF5),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFFCFDFF),
+    surfaceContainer = Color(0xFFF8FBFF),
+    surfaceContainerHigh = Color(0xFFF1F5FA),
+    surfaceContainerHighest = Color(0xFFE8F0F7),
+    inverseSurface = AppText,
+    inverseOnSurface = Color.White,
+    outline = Color(0xFF889AAF),
+    outlineVariant = Color(0xFFD6E1EC),
+    error = Color(0xFFB43F43),
+    onError = Color.White,
+    errorContainer = Color(0xFFFDE8E8),
+    onErrorContainer = Color(0xFF6D1C22),
+    scrim = Color.Black
 )
 
 private enum class BottomTab { HOME, SETTINGS }
@@ -124,6 +171,19 @@ private sealed interface Route {
     data class Gesture(val kind: GestureKind) : Route
 }
 
+private data class ActionChoice(val action: ActionType, val common: CommonAction? = null) {
+    val title: String get() = common?.title ?: action.title
+    val icon: ImageVector get() = if (common != null) Icons.Default.Tune else actionIcon(action)
+}
+
+private val actionChoices = ActionType.entries.flatMap { action ->
+    if (action == ActionType.COMMON_FUNCTION) {
+        CommonAction.entries.map { ActionChoice(action, it) }
+    } else {
+        listOf(ActionChoice(action))
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,17 +192,54 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 private fun CustomSideButtonApp() {
     val context = LocalContext.current
     val view = LocalView.current
     var settings by remember { mutableStateOf(SettingsStore.load(context)) }
     var route by remember { mutableStateOf<Route>(Route.Home) }
+    var displayedDetail by remember { mutableStateOf<Route?>(null) }
+    var predictiveTarget by remember { mutableStateOf<Route?>(null) }
+    val predictiveProgress = remember { Animatable(0f) }
+    var routeTransitionEpoch by remember { mutableIntStateOf(0) }
+    var skipCommittedReturn by remember { mutableStateOf(false) }
+    var contentWidth by remember { mutableFloatStateOf(0f) }
 
     fun persist(next: AppSettings) {
         settings = next
         SettingsStore.save(context, next)
+    }
+
+    fun navigate(next: Route) {
+        if (route != next) {
+            skipCommittedReturn = false
+            if (!isPrimaryRoute(next)) displayedDetail = next
+            route = next
+        }
+    }
+
+    val primaryRoute: Route = if (route is Route.Settings || route is Route.About) Route.Settings else Route.Home
+
+    val animatedShade by animateFloatAsState(
+        targetValue = if (route is Route.Home || route is Route.Settings) 0f else PageShadeOpacity,
+        animationSpec = tween(280),
+        label = "Page shade"
+    )
+    val pageShade = when {
+        predictiveTarget != null -> animatedShade * (1f - predictiveProgress.value)
+        skipCommittedReturn -> 0f
+        else -> animatedShade
+    }
+    val animatedRootOffset by animateFloatAsState(
+        targetValue = if (isPrimaryRoute(route)) 0f else -PageSlideFraction,
+        animationSpec = tween(280),
+        label = "Primary page offset"
+    )
+    val rootOffset = when {
+        predictiveTarget != null -> -PageSlideFraction * (1f - predictiveProgress.value)
+        skipCommittedReturn -> 0f
+        else -> animatedRootOffset
     }
 
     val selectedTab = when (route) {
@@ -151,8 +248,25 @@ private fun CustomSideButtonApp() {
     }
     val showBottomBar = route is Route.Home || route is Route.Settings || route is Route.About
 
-    BackHandler(enabled = route !is Route.Home && route !is Route.Settings) {
-        route = if (route is Route.About) Route.Settings else Route.Home
+    PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.Settings) { progress ->
+        val destination = backDestination(route)
+        try {
+            predictiveTarget = destination
+            progress.collect { event ->
+                predictiveProgress.snapTo(event.progress.coerceIn(0f, 1f))
+            }
+            predictiveProgress.animateTo(1f, tween(350))
+            // Replace the transition host at commit so it cannot retain the outgoing page.
+            routeTransitionEpoch++
+            skipCommittedReturn = true
+            route = destination
+            predictiveTarget = null
+        } catch (_: CancellationException) {
+            predictiveProgress.animateTo(0f, tween(180))
+        } finally {
+            predictiveTarget = null
+            predictiveProgress.snapTo(0f)
+        }
     }
 
     MaterialTheme(colorScheme = AppColors) {
@@ -163,13 +277,13 @@ private fun CustomSideButtonApp() {
                     NavigationBar(containerColor = Color.White) {
                         NavigationBarItem(
                             selected = selectedTab == BottomTab.HOME,
-                            onClick = { clickSound(view); route = Route.Home },
+                            onClick = { clickSound(view); navigate(Route.Home) },
                             icon = { Icon(Icons.Default.Home, contentDescription = "首页") },
                             label = { Text("首页") }
                         )
                         NavigationBarItem(
                             selected = selectedTab == BottomTab.SETTINGS,
-                            onClick = { clickSound(view); route = Route.Settings },
+                            onClick = { clickSound(view); navigate(Route.Settings) },
                             icon = { Icon(Icons.Default.Settings, contentDescription = "设置") },
                             label = { Text("设置") }
                         )
@@ -177,15 +291,84 @@ private fun CustomSideButtonApp() {
                 }
             }
         ) { padding ->
-            when (val current = route) {
-                Route.Home -> HomeScreen(settings, { route = it }, { persist(it) }, padding)
-                Route.Settings -> SettingsScreen({ route = it }, padding)
-                Route.About -> AboutScreen({ route = it }, padding)
-                Route.Feedback -> FeedbackScreen(settings, { persist(it) }, { route = Route.Home }, padding)
-                Route.Advanced -> AdvancedScreen(settings, { persist(it) }, { route = Route.Home }, padding)
-                is Route.Gesture -> GestureScreen(current.kind, settings, { persist(it) }, { route = Route.Home }, padding)
+            Box(Modifier.fillMaxSize().onSizeChanged { contentWidth = it.width.toFloat() }) {
+                AnimatedContent(
+                    targetState = primaryRoute,
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        translationX = contentWidth * rootOffset
+                    }.background(AppBackground),
+                    transitionSpec = {
+                        val direction = routeDirection(initialState, targetState)
+                        (slideInHorizontally(tween(280)) { (it * PageSlideFraction * direction).toInt() } togetherWith
+                            slideOutHorizontally(tween(280)) { (-it * PageSlideFraction * direction).toInt() })
+                            .using(SizeTransform(clip = true))
+                    },
+                    label = "Tab transition"
+                ) { current ->
+                    RouteScreen(current, settings, ::navigate, ::persist, padding)
+                }
+
+                Box(Modifier.fillMaxSize()
+                    .background(Color.Black.copy(alpha = pageShade))
+                    .then(if (!isPrimaryRoute(route) || pageShade > 0f) Modifier.pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                        }
+                    } else Modifier)
+                )
+
+                key(routeTransitionEpoch) {
+                    AnimatedVisibility(
+                        visible = !isPrimaryRoute(route),
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            val progress = if (predictiveTarget != null) predictiveProgress.value else 0f
+                            translationX = contentWidth * progress
+                            scaleX = 1f - 0.2f * progress
+                            scaleY = 1f - 0.2f * progress
+                        },
+                        enter = slideInHorizontally(tween(280)) { it } +
+                            scaleIn(initialScale = 0.8f, animationSpec = tween(280)),
+                        exit = slideOutHorizontally(tween(280)) { it } +
+                            scaleOut(targetScale = 0.8f, animationSpec = tween(280)),
+                        label = "Detail transition"
+                    ) {
+                        displayedDetail?.let { detail ->
+                            Box(Modifier.fillMaxSize().background(AppBackground)) {
+                                RouteScreen(detail, settings, ::navigate, ::persist, padding)
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private fun backDestination(route: Route): Route =
+    if (route is Route.About) Route.Settings else Route.Home
+
+private fun isPrimaryRoute(route: Route): Boolean = route is Route.Home || route is Route.Settings
+
+private fun routeDirection(from: Route, to: Route): Int = when {
+    to == Route.Home || (from == Route.About && to == Route.Settings) -> -1
+    else -> 1
+}
+
+@Composable
+private fun RouteScreen(
+    route: Route,
+    settings: AppSettings,
+    navigate: (Route) -> Unit,
+    persist: (AppSettings) -> Unit,
+    padding: PaddingValues
+) {
+    when (route) {
+        Route.Home -> HomeScreen(settings, navigate, persist, padding)
+        Route.Settings -> SettingsScreen(navigate, padding)
+        Route.About -> AboutScreen(navigate, padding)
+        Route.Feedback -> FeedbackScreen(settings, persist, { navigate(Route.Home) }, padding)
+        Route.Advanced -> AdvancedScreen(settings, persist, { navigate(Route.Home) }, padding)
+        is Route.Gesture -> GestureScreen(route.kind, settings, persist, { navigate(Route.Home) }, padding)
     }
 }
 
@@ -266,7 +449,6 @@ private fun GestureScreen(
     padding: PaddingValues
 ) {
     val view = LocalView.current
-    val context = LocalContext.current
     var sliderValue by remember(kind, settings) {
         mutableFloatStateOf(
             when (kind) {
@@ -276,6 +458,8 @@ private fun GestureScreen(
             }
         )
     }
+    val currentAction = selectedAction(kind, settings)
+    val currentCustom = selectedCustom(kind, settings)
     Column(Modifier.fillMaxSize().padding(padding)) {
         BackTitle(kind.title, back)
         LazyColumn(
@@ -323,87 +507,22 @@ private fun GestureScreen(
           }
           item { SectionLabel("选择要执行的功能") }
           item {
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                val currentAction = selectedAction(kind, settings)
-                val currentCustom = selectedCustom(kind, settings)
-                val divider = @Composable { HorizontalDivider(color = Color(0xFFEAF0F7), modifier = Modifier.padding(start = 58.dp)) }
-
-                Column {
-                    ActionOption(ActionType.NONE, selected = currentAction == ActionType.NONE) {
-                        persist(updateAction(kind, settings, ActionType.NONE))
-                    }
-                    divider()
-                    ActionOption(ActionType.CYCLE_RINGER, selected = currentAction == ActionType.CYCLE_RINGER) {
-                        persist(updateAction(kind, settings, ActionType.CYCLE_RINGER))
-                    }
-                    divider()
-                    ActionOption(ActionType.TOGGLE_DND, selected = currentAction == ActionType.TOGGLE_DND) {
-                        persist(updateAction(kind, settings, ActionType.TOGGLE_DND))
-                    }
-                    divider()
-                    ActionOption(ActionType.CAMERA, selected = currentAction == ActionType.CAMERA) {
-                        persist(updateAction(kind, settings, ActionType.CAMERA))
-                    }
-                    divider()
-                    ActionOption(ActionType.FLASHLIGHT, selected = currentAction == ActionType.FLASHLIGHT) {
-                        persist(updateAction(kind, settings, ActionType.FLASHLIGHT))
-                    }
-                    divider()
-                    ActionOption(ActionType.SCREENSHOT, selected = currentAction == ActionType.SCREENSHOT) {
-                        persist(updateAction(kind, settings, ActionType.SCREENSHOT))
-                    }
-
-                    CommonAction.entries.forEach { common ->
-                        divider()
-                        val selected = currentAction == ActionType.COMMON_FUNCTION && currentCustom.commonAction == common
-                        ActionOption(common.title, Icons.Default.Tune, selected) {
-                            val next = updateAction(kind, settings, ActionType.COMMON_FUNCTION)
-                            persist(updateCustom(kind, next, currentCustom.copy(commonAction = common)))
-                        }
-                    }
-
-                    divider()
-                    ActionOption(ActionType.XIAOBU_SHORTCUT, selected = currentAction == ActionType.XIAOBU_SHORTCUT) {
-                        persist(updateAction(kind, settings, ActionType.XIAOBU_SHORTCUT))
-                    }
-                    if (currentAction == ActionType.XIAOBU_SHORTCUT) {
-                        CustomActionEditor(ActionType.XIAOBU_SHORTCUT, currentCustom) {
-                            persist(updateCustom(kind, settings, it))
-                        }
-                    }
-
-                    divider()
-                    ActionOption(ActionType.CUSTOM_ACTIVITY, selected = currentAction == ActionType.CUSTOM_ACTIVITY) {
-                        persist(updateAction(kind, settings, ActionType.CUSTOM_ACTIVITY))
-                    }
-                    if (currentAction == ActionType.CUSTOM_ACTIVITY) {
-                        CustomActionEditor(ActionType.CUSTOM_ACTIVITY, currentCustom) {
-                            persist(updateCustom(kind, settings, it))
-                        }
-                    }
-
-                    divider()
-                    ActionOption(ActionType.CUSTOM_URL, selected = currentAction == ActionType.CUSTOM_URL) {
-                        persist(updateAction(kind, settings, ActionType.CUSTOM_URL))
-                    }
-                    if (currentAction == ActionType.CUSTOM_URL) {
-                        CustomActionEditor(ActionType.CUSTOM_URL, currentCustom) {
-                            persist(updateCustom(kind, settings, it))
-                        }
-                    }
-
-                    divider()
-                    ActionOption(ActionType.SHELL_COMMAND, selected = currentAction == ActionType.SHELL_COMMAND) {
-                        if (currentAction != ActionType.SHELL_COMMAND) {
-                            showShellPermissionDialog(context)
-                        }
-                        persist(updateAction(kind, settings, ActionType.SHELL_COMMAND))
-                    }
-                    if (currentAction == ActionType.SHELL_COMMAND) {
-                        CustomActionEditor(ActionType.SHELL_COMMAND, currentCustom) {
-                            persist(updateCustom(kind, settings, it))
-                        }
-                    }
+            val selected = ActionChoice(
+                currentAction,
+                if (currentAction == ActionType.COMMON_FUNCTION) currentCustom.commonAction else null
+            )
+            ActionPicker(selected) { choice ->
+                val next = updateAction(kind, settings, choice.action)
+                persist(if (choice.common != null) {
+                    updateCustom(kind, next, currentCustom.copy(commonAction = choice.common))
+                } else next)
+            }
+          }
+          if (currentAction in listOf(ActionType.XIAOBU_SHORTCUT, ActionType.CUSTOM_ACTIVITY,
+                  ActionType.CUSTOM_URL, ActionType.SHELL_COMMAND)) {
+            item {
+                CustomActionEditor(currentAction, currentCustom) {
+                    persist(updateCustom(kind, settings, it))
                 }
             }
           }
@@ -620,30 +739,51 @@ private fun IntroCard(icon: ImageVector, title: String, description: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActionOption(action: ActionType, selected: Boolean, onClick: () -> Unit) {
-    ActionOption(action.title, actionIcon(action), selected, onClick)
-}
-
-@Composable
-private fun ActionOption(title: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+private fun ActionPicker(selected: ActionChoice, onSelect: (ActionChoice) -> Unit) {
     val view = LocalView.current
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable {
-            clickSound(view)
-            onClick()
-        }.padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { clickSound(view); expanded = it },
+        modifier = Modifier.fillMaxWidth()
     ) {
-        IconBadge(icon, size = 34.dp, iconSize = 19.dp)
-        Spacer(Modifier.width(12.dp))
-        Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Icon(
-            imageVector = if (selected) Icons.Default.CheckCircle else Icons.Default.RemoveCircleOutline,
-            contentDescription = if (selected) "已选择" else "未选择",
-            tint = if (selected) AppBlue else Color(0xFFADC0D8),
-            modifier = Modifier.size(22.dp)
-        )
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconBadge(selected.icon, size = 34.dp, iconSize = 19.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(selected.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ExpandMore, contentDescription = "选择功能", tint = AppMuted)
+            }
+        }
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            actionChoices.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.title) },
+                    leadingIcon = { Icon(choice.icon, contentDescription = null) },
+                    trailingIcon = if (choice == selected) {
+                        { Icon(Icons.Default.CheckCircle, contentDescription = "已选择", tint = AppBlue) }
+                    } else null,
+                    onClick = {
+                        clickSound(view)
+                        expanded = false
+                        onSelect(choice)
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -697,12 +837,6 @@ private fun CustomActionEditor(
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
-                val context = LocalContext.current
-                OutlinedButton(onClick = { showShellPermissionDialog(context) }) {
-                    Icon(Icons.Default.Security, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("请求 Root 权限")
-                }
             }
         }
         else -> Unit
@@ -715,23 +849,6 @@ private fun ParameterCard(title: String, content: @Composable () -> Unit) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             content()
-        }
-    }
-}
-
-@Composable
-private fun CommonActionSelector(value: CommonAction, onChange: (CommonAction) -> Unit) {
-    val view = LocalView.current
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { clickSound(view); expanded = true }) { Text(value.title) }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            CommonAction.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option.title) },
-                    onClick = { clickSound(view); onChange(option); expanded = false }
-                )
-            }
         }
     }
 }
@@ -789,21 +906,6 @@ private fun NumberField(value: String, label: String, onValueChange: (String) ->
 
 private fun clickSound(view: View) {
     view.playSoundEffect(SoundEffectConstants.CLICK)
-}
-
-private fun showShellPermissionDialog(context: Context) {
-    AlertDialog.Builder(context)
-        .setTitle("执行 Shell 指令需要 Root")
-        .setMessage(
-            "由于系统限制，Shell 指令需要 Root 权限。\n\n" +
-                "请确认 LSPosed 已勾选模块作用域“系统桌面 / com.android.launcher”，" +
-                "然后点击下方按钮请求 Root。首次执行时请在 Root 管理器中允许授权。"
-        )
-        .setNegativeButton("稍后", null)
-        .setPositiveButton("授予 Root 权限") { _, _ ->
-            ShellRelayContract.requestRootPermission(context)
-        }
-        .show()
 }
 
 private fun selectedAction(kind: GestureKind, settings: AppSettings): ActionType = when (kind) {

@@ -26,4 +26,5 @@ Debug APK 输出在 `app/build/outputs/apk/debug/app-debug.apk`，Release APK �
 
 - 响铃、振动、手电筒、相机和系统截屏动作由系统框架进程执行，模块必须作用域到 Android 系统框架。
 - 某些一加版本会限制后台启动相机或自定义 Toast；遇到这种情况请确认系统框架作用域和电池优化设置。
-- 截屏优先调用系统 `StatusBarManager` 隐藏接口，同时向 SystemUI 发送兼容广播。具体可用接口由 ROM 版本决定。
+- 截屏优先调用系统 `ScreenshotHelper` 和 `StatusBarManager` 接口；失败时在系统框架进程执行 Shell 兜底，仍失败才向 SystemUI 发送兼容广播。具体可用接口由 ROM 版本决定。
+- Shell 指令在系统框架进程的后台线程中直接执行 `su`，不依赖系统桌面作用域；Root 管理器需允许该进程获得授权。

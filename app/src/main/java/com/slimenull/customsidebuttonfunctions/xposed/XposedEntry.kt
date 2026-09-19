@@ -7,12 +7,11 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
-/** Xposed entry point for the framework key hook and the Launcher shell relay. */
+/** Xposed entry point for the framework key hook and shortcut editor. */
 class XposedEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         when (lpparam.packageName) {
             "android" -> SideKeyModule.install(lpparam)
-            ShellRelayHook.PACKAGE -> ShellRelayHook.install(lpparam)
             "com.coloros.shortcuts" -> ShortcutsHook.install(lpparam)
         }
     }
