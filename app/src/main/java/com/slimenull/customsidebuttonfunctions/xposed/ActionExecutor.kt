@@ -21,6 +21,7 @@ import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.util.function.Consumer
@@ -38,6 +39,28 @@ internal class ActionExecutor {
 
     fun updateStrategy(value: Any?) {
         if (value != null) strategy = value
+    }
+
+    fun vibrateMorseCue() {
+        val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
+        runCatching {
+            val vibrator = currentContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (vibrator?.hasVibrator() == true) {
+                vibrator.vibrate(VibrationEffect.createOneShot(50L, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        }.onFailure { XposedBridge.log("CustomSideButtonFunctions: Morse vibration failed: ${it.message}") }
+    }
+
+    fun notifyUnknownMorseSequence(settings: AppSettings) {
+        if (!settings.unknownMorseFeedbackEnabled) return
+        val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
+        showToast(currentContext, settings.unknownMorseToastText.ifBlank { DEFAULT_UNKNOWN_MORSE_TOAST })
+        runCatching {
+            val vibrator = currentContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (vibrator?.hasVibrator() == true) {
+                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0L, 50L, 50L, 50L), -1))
+            }
+        }.onFailure { XposedBridge.log("CustomSideButtonFunctions: unknown Morse vibration failed: ${it.message}") }
     }
 
     fun execute(
@@ -210,6 +233,7 @@ internal class ActionExecutor {
             CommonAction.WECHAT_PAY -> startWechatShortcut(context, "launch_type_offline_wallet")
             CommonAction.WECHAT_SCAN -> startWechatShortcut(context, "launch_type_scan_qrcode")
             CommonAction.ALIPAY_PAY -> openUrl(context, "alipays://platformapi/startapp?saId=20000056")
+            CommonAction.ALIPAY_RECEIVE -> openUrl(context, "alipays://platformapi/startapp?appId=20000123")
             CommonAction.ALIPAY_SCAN -> openUrl(context, "alipays://platformapi/startapp?saId=10000007")
             CommonAction.FLASH_MEMORY -> startFlashMemory()
             CommonAction.XIAOBU_MEMORY -> startActivity(context, "com.oplus.aimemory", "com.oplus.aimemory.MainActivity", "")

@@ -25,6 +25,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,23 +36,29 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -63,6 +71,8 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -76,9 +86,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -97,18 +112,24 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.slimenull.customsidebuttonfunctions.data.SettingsStore
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import com.slimenull.customsidebuttonfunctions.model.MorseBinding
+import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 
@@ -172,6 +193,7 @@ private enum class GestureKind(val title: String, val subtitle: String) {
 private sealed interface Route {
     data object Home : Route
     data object Settings : Route
+    data object Morse : Route
     data object Feedback : Route
     data object Advanced : Route
     data object About : Route
@@ -190,6 +212,7 @@ private val actionChoices = ActionType.entries.flatMap { action ->
         listOf(ActionChoice(action))
     }
 }
+private val morseActionChoices = actionChoices.filter { it.action != ActionType.NONE }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -404,6 +427,7 @@ private fun RouteScreen(
     when (route) {
         Route.Home -> HomeScreen(settings, navigate, persist, padding)
         Route.Settings -> SettingsScreen(navigate, padding)
+        Route.Morse -> MorseScreen(settings, persist, { navigate(Route.Home) }, padding)
         Route.About -> AboutScreen(navigate, padding)
         Route.Feedback -> FeedbackScreen(settings, persist, { navigate(Route.Home) }, padding)
         Route.Advanced -> AdvancedScreen(settings, persist, { navigate(Route.Home) }, padding)
@@ -418,6 +442,7 @@ private fun HomeScreen(
     persist: (AppSettings) -> Unit,
     padding: PaddingValues
 ) {
+    val view = LocalView.current
     Column(Modifier.fillMaxSize().padding(padding)) {
         Text(
             "侧键功能设置",
@@ -431,7 +456,6 @@ private fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                val view = LocalView.current
                 Card(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -447,10 +471,43 @@ private fun HomeScreen(
                     }
                 }
             }
-            item { SectionLabel("按键事件设置") }
-            item { GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate) }
-            item { GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate) }
-            item { GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate) }
+            item { SectionLabel("操作模式") }
+            item {
+                val modeColors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = AppBlueSoft,
+                    activeContentColor = AppBlueDark,
+                    activeBorderColor = AppBlue,
+                    inactiveContainerColor = Color.White,
+                    inactiveContentColor = AppText,
+                    inactiveBorderColor = Color(0xFF9AAFC6)
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    OperationMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = settings.operationMode == mode,
+                            onClick = { clickSound(view); persist(settings.copy(operationMode = mode)) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index, OperationMode.entries.size, baseShape = RoundedCornerShape(8.dp)
+                            ),
+                            colors = modeColors,
+                            modifier = Modifier.weight(1f),
+                            label = { Text(mode.title) }
+                        )
+                    }
+                }
+            }
+            item { SectionLabel(settings.operationMode.title) }
+            if (settings.operationMode == OperationMode.SIMPLE) {
+                item { GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate) }
+                item { GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate) }
+                item { GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate) }
+            } else {
+                item {
+                    SettingRow(Icons.Default.Code, "摩斯电码设置", "${settings.morseBindings.size} 条指令") {
+                        navigate(Route.Morse)
+                    }
+                }
+            }
             item { SectionLabel("其他设置") }
             item {
                 SettingRow(Icons.Default.Vibration, "振动与提示", "配置振动时长和 Toast 提示") { navigate(Route.Feedback) }
@@ -573,6 +630,232 @@ private fun GestureScreen(
 }
 
 @Composable
+private fun MorseScreen(
+    settings: AppSettings,
+    persist: (AppSettings) -> Unit,
+    back: () -> Unit,
+    padding: PaddingValues
+) {
+    val view = LocalView.current
+    var editorOpen by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<MorseBinding?>(null) }
+    var deleting by remember { mutableStateOf<MorseBinding?>(null) }
+
+    Column(Modifier.fillMaxSize().padding(padding)) {
+        BackTitle("摩斯电码操作", back)
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item { SectionLabel("判定时间") }
+            item {
+                MorseTimingCard("长按持续时间", settings.morseLongPressMs) {
+                    persist(settings.copy(morseLongPressMs = it))
+                }
+            }
+            item {
+                MorseTimingCard("指令判断等待时间", settings.morseCommandWindowMs) {
+                    persist(settings.copy(morseCommandWindowMs = it))
+                }
+            }
+            item { SectionLabel("按键提示（50ms）") }
+            item {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp)) {
+                        SettingSwitchRow("按下时振动", settings.morsePressVibrationEnabled) {
+                            persist(settings.copy(morsePressVibrationEnabled = it))
+                        }
+                        HorizontalDivider(color = Color(0xFFEAF0F7))
+                        SettingSwitchRow("达到长按时振动", settings.morseLongVibrationEnabled) {
+                            persist(settings.copy(morseLongVibrationEnabled = it))
+                        }
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    SectionLabel("指令映射")
+                    Button(onClick = { clickSound(view); editing = null; editorOpen = true }) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("添加")
+                    }
+                }
+            }
+            if (settings.morseBindings.isEmpty()) {
+                item { Text("暂无指令", color = AppMuted, modifier = Modifier.padding(vertical = 16.dp)) }
+            }
+            items(settings.morseBindings, key = { it.sequence }) { binding ->
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).clickable {
+                            clickSound(view)
+                            editing = binding
+                            editorOpen = true
+                        }) {
+                            Text(binding.sequence, fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(morseActionTitle(binding), color = AppMuted,
+                                style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { clickSound(view); editing = binding; editorOpen = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "编辑指令")
+                        }
+                        IconButton(onClick = { clickSound(view); deleting = binding }) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "删除指令")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editorOpen) {
+        MorseBindingEditorDialog(
+            original = editing,
+            existing = settings.morseBindings,
+            onDismiss = { editorOpen = false },
+            onSave = { binding ->
+                val index = settings.morseBindings.indexOfFirst { it.sequence == editing?.sequence }
+                val next = settings.morseBindings.toMutableList().apply {
+                    if (index >= 0) set(index, binding) else add(binding)
+                }
+                persist(settings.copy(morseBindings = next))
+                editorOpen = false
+            }
+        )
+    }
+    deleting?.let { binding ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("删除指令 ${binding.sequence}？") },
+            text = { Text(morseActionTitle(binding)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    persist(settings.copy(morseBindings = settings.morseBindings.filterNot { it.sequence == binding.sequence }))
+                    deleting = null
+                }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit) {
+    val view = LocalView.current
+    var sliderValue by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(14.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = { clickSound(view); onChange(sliderValue.toLong()) },
+                    valueRange = 100f..2000f,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    Modifier.width(82.dp).height(38.dp)
+                        .background(Color(0xFFF3F7FC), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("${sliderValue.toLong()} ms", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("100ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                Text("2000ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+            }
+        }
+    }
+}
+
+private fun morseActionTitle(binding: MorseBinding): String =
+    if (binding.action == ActionType.COMMON_FUNCTION) binding.custom.commonAction.title else binding.action.title
+
+@Composable
+private fun MorseBindingEditorDialog(
+    original: MorseBinding?,
+    existing: List<MorseBinding>,
+    onDismiss: () -> Unit,
+    onSave: (MorseBinding) -> Unit
+) {
+    var sequence by remember(original) { mutableStateOf(original?.sequence.orEmpty()) }
+    var action by remember(original) { mutableStateOf(original?.action ?: ActionType.SCREENSHOT) }
+    var custom by remember(original) { mutableStateOf(original?.custom ?: CustomActionSettings()) }
+    var showError by remember(original) { mutableStateOf(false) }
+    val error = when {
+        sequence.isEmpty() -> "请输入指令序列"
+        existing.any { it.sequence == sequence && it.sequence != original?.sequence } -> "该序列已存在"
+        else -> null
+    }
+    val selected = ActionChoice(action, if (action == ActionType.COMMON_FUNCTION) custom.commonAction else null)
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
+    val view = LocalView.current
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = AppBackground,
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+        ) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (original == null) "添加指令" else "编辑指令",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = sequence,
+                    onValueChange = { sequence = it.filter { symbol -> symbol == '0' || symbol == '1' } },
+                    label = { Text("指令序列（0 短、1 长）") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = showError && error != null,
+                    supportingText = if (showError && error != null) { { Text(error) } } else null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { clickSound(view); sequence += '0' }, modifier = Modifier.weight(1f)) {
+                        Text("短 0")
+                    }
+                    OutlinedButton(onClick = { clickSound(view); sequence += '1' }, modifier = Modifier.weight(1f)) {
+                        Text("长 1")
+                    }
+                    IconButton(onClick = { clickSound(view); if (sequence.isNotEmpty()) sequence = sequence.dropLast(1) }) {
+                        Icon(Icons.Default.Backspace, contentDescription = "删除末位")
+                    }
+                }
+                if (sequence.isNotEmpty()) {
+                    Text(sequence.map { if (it == '0') "短" else "长" }.joinToString(" "),
+                        color = AppMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                SectionLabel("执行动作")
+                ActionPicker(selected, morseActionChoices) { choice ->
+                    action = choice.action
+                    if (choice.common != null) custom = custom.copy(commonAction = choice.common)
+                }
+                if (action in listOf(ActionType.XIAOBU_SHORTCUT, ActionType.CUSTOM_ACTIVITY,
+                        ActionType.CUSTOM_URL, ActionType.SHELL_COMMAND)) {
+                    CustomActionEditor(action, custom) { custom = it }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Button(onClick = {
+                        showError = true
+                        if (error == null) onSave(MorseBinding(sequence, action, custom))
+                    }) { Text("保存") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FeedbackScreen(settings: AppSettings, persist: (AppSettings) -> Unit, back: () -> Unit, padding: PaddingValues) {
     val view = LocalView.current
     var vibrationValue by remember(settings.vibrationDurationMs) { mutableFloatStateOf(settings.vibrationDurationMs.toFloat()) }
@@ -623,6 +906,23 @@ private fun FeedbackScreen(settings: AppSettings, persist: (AppSettings) -> Unit
             }
           }
           item { InfoCard("Toast 提示会在系统框架进程中显示，具体样式由当前 ROM 决定。") }
+          item { SectionLabel("未知摩斯电码序列提示") }
+          item {
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingSwitchRow("Toast 与双震动", settings.unknownMorseFeedbackEnabled) {
+                        persist(settings.copy(unknownMorseFeedbackEnabled = it))
+                    }
+                    OutlinedTextField(
+                        value = settings.unknownMorseToastText,
+                        onValueChange = { persist(settings.copy(unknownMorseToastText = it)) },
+                        label = { Text("提示内容") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+          }
         }
     }
 }
@@ -780,7 +1080,11 @@ private fun IntroCard(icon: ImageVector, title: String, description: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActionPicker(selected: ActionChoice, onSelect: (ActionChoice) -> Unit) {
+private fun ActionPicker(
+    selected: ActionChoice,
+    choices: List<ActionChoice> = actionChoices,
+    onSelect: (ActionChoice) -> Unit
+) {
     val view = LocalView.current
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
@@ -808,7 +1112,7 @@ private fun ActionPicker(selected: ActionChoice, onSelect: (ActionChoice) -> Uni
             onDismissRequest = { expanded = false },
             shape = RoundedCornerShape(14.dp)
         ) {
-            actionChoices.forEach { choice ->
+            choices.forEach { choice ->
                 DropdownMenuItem(
                     text = { Text(choice.title) },
                     leadingIcon = { Icon(choice.icon, contentDescription = null) },

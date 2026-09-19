@@ -1,5 +1,7 @@
 package com.slimenull.customsidebuttonfunctions.model
 
+const val DEFAULT_UNKNOWN_MORSE_TOAST = "未知操作序列"
+
 data class AppSettings(
     val enabled: Boolean = true,
     val keyCode: Int = 735,
@@ -9,6 +11,12 @@ data class AppSettings(
     val singleAction: ActionType = ActionType.CYCLE_RINGER,
     val doubleAction: ActionType = ActionType.NONE,
     val longAction: ActionType = ActionType.SCREENSHOT,
+    val operationMode: OperationMode = OperationMode.SIMPLE,
+    val morseLongPressMs: Long = 350L,
+    val morseCommandWindowMs: Long = 350L,
+    val morsePressVibrationEnabled: Boolean = true,
+    val morseLongVibrationEnabled: Boolean = true,
+    val morseBindings: List<MorseBinding> = emptyList(),
     val singleCustom: CustomActionSettings = CustomActionSettings(),
     val doubleCustom: CustomActionSettings = CustomActionSettings(),
     val longCustom: CustomActionSettings = CustomActionSettings(),
@@ -16,5 +24,7 @@ data class AppSettings(
     val vibrationDurationMs: Long = 50L,
     val toastEnabled: Boolean = false,
     val toastText: String = "侧键操作已执行",
+    val unknownMorseFeedbackEnabled: Boolean = false,
+    val unknownMorseToastText: String = DEFAULT_UNKNOWN_MORSE_TOAST,
     val wakeScreenWhenOff: Boolean = false
 )

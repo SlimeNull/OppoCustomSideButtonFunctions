@@ -2,10 +2,12 @@ package com.slimenull.customsidebuttonfunctions.xposed
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import com.slimenull.customsidebuttonfunctions.model.OperationMode
 
 /** Thread-safe gesture state machine shared by framework and raw input sources. */
 internal class SideKeyController {
@@ -19,6 +21,12 @@ internal class SideKeyController {
     private var activeInteractive = true
     private var longRunnable: Runnable? = null
     private var singleRunnable: Runnable? = null
+    private val morseSequence = StringBuilder()
+    private var morseDownAt = 0L
+    private var morseLastUpAt = 0L
+    private var morseLongReached = false
+    private var morseThresholdRunnable: Runnable? = null
+    private var morseFinishRunnable: Runnable? = null
 
     fun onKeyEvent(event: KeyEvent, executor: ActionExecutor) {
         when (event.action) {
@@ -34,12 +42,21 @@ internal class SideKeyController {
             resetClickState()
             longRunnable?.let(handler::removeCallbacks)
             longRunnable = null
+            resetMorseState()
         }
     }
 
     fun onDown(settings: AppSettings, executor: ActionExecutor, interactive: Boolean) {
         synchronized(lock) {
             if (!settings.enabled || pressed) return
+            if (settings.operationMode == OperationMode.MORSE) {
+                resetClickState()
+                longRunnable?.let(handler::removeCallbacks)
+                longRunnable = null
+                onMorseDown(settings, executor, interactive)
+                return
+            }
+            resetMorseState()
             pressed = true
             activeSettings = settings
             activeInteractive = interactive
@@ -53,6 +70,11 @@ internal class SideKeyController {
             val runnable = Runnable {
                 synchronized(lock) {
                     if (pressed && !longTriggered) {
+                        val current = SettingsReader.load()
+                        if (!current.enabled || current.operationMode != OperationMode.SIMPLE) {
+                            cancel()
+                            return@synchronized
+                        }
                         longTriggered = true
                         execute(activeSettings.longAction, activeSettings.longCustom, activeSettings, executor, activeInteractive)
                     }
@@ -66,6 +88,14 @@ internal class SideKeyController {
     fun onUp(settings: AppSettings, executor: ActionExecutor, interactive: Boolean) {
         synchronized(lock) {
             if (!pressed) return
+            if (!settings.enabled || settings.operationMode != activeSettings.operationMode) {
+                cancel()
+                return
+            }
+            if (activeSettings.operationMode == OperationMode.MORSE) {
+                onMorseUp(executor, interactive)
+                return
+            }
             pressed = false
             longRunnable?.let(handler::removeCallbacks)
             longRunnable = null
@@ -88,7 +118,10 @@ internal class SideKeyController {
                 synchronized(lock) {
                     if (pendingSingle) {
                         pendingSingle = false
-                        execute(activeSettings.singleAction, activeSettings.singleCustom, activeSettings, executor, activeInteractive)
+                        val current = SettingsReader.load()
+                        if (current.enabled && current.operationMode == OperationMode.SIMPLE) {
+                            execute(activeSettings.singleAction, activeSettings.singleCustom, activeSettings, executor, activeInteractive)
+                        }
                     }
                 }
             }
@@ -102,6 +135,107 @@ internal class SideKeyController {
         pendingSingle = false
         singleRunnable?.let(handler::removeCallbacks)
         singleRunnable = null
+    }
+
+    private fun onMorseDown(settings: AppSettings, executor: ActionExecutor, interactive: Boolean) {
+        val now = SystemClock.uptimeMillis()
+        if (morseSequence.isNotEmpty() && now - morseLastUpAt >= activeSettings.morseCommandWindowMs) {
+            finishMorseSequence(executor)
+        }
+        morseFinishRunnable?.let(handler::removeCallbacks)
+        morseFinishRunnable = null
+        if (morseSequence.isEmpty()) {
+            activeSettings = settings
+            activeInteractive = interactive
+        } else {
+            activeInteractive = activeInteractive && interactive
+        }
+        pressed = true
+        morseDownAt = now
+        morseLongReached = false
+        if (activeSettings.morsePressVibrationEnabled) executor.vibrateMorseCue()
+
+        val runnable = object : Runnable {
+            override fun run() {
+                synchronized(lock) {
+                    if (morseThresholdRunnable === this && pressed && !morseLongReached) {
+                        val current = SettingsReader.load()
+                        if (!current.enabled || current.operationMode != OperationMode.MORSE) {
+                            cancel()
+                            return@synchronized
+                        }
+                        morseLongReached = true
+                        if (activeSettings.morseLongVibrationEnabled) executor.vibrateMorseCue()
+                    }
+                }
+            }
+        }
+        morseThresholdRunnable = runnable
+        handler.postDelayed(runnable, activeSettings.morseLongPressMs)
+    }
+
+    private fun onMorseUp(executor: ActionExecutor, interactive: Boolean) {
+        if (!pressed) return
+        pressed = false
+        morseThresholdRunnable?.let(handler::removeCallbacks)
+        morseThresholdRunnable = null
+        val now = SystemClock.uptimeMillis()
+        val isLong = morseLongReached || now - morseDownAt >= activeSettings.morseLongPressMs
+        if (isLong && !morseLongReached && activeSettings.morseLongVibrationEnabled) {
+            executor.vibrateMorseCue()
+        }
+        morseSequence.append(if (isLong) '1' else '0')
+        activeInteractive = activeInteractive && interactive
+        morseLastUpAt = now
+
+        val current = SettingsReader.load()
+        if (!current.enabled || current.operationMode != OperationMode.MORSE) {
+            resetMorseState()
+            return
+        }
+        val sequence = morseSequence.toString()
+        val exactMatch = current.morseBindings.any { it.sequence == sequence }
+        val hasLongerMatch = current.morseBindings.any {
+            it.sequence.length > sequence.length && it.sequence.startsWith(sequence)
+        }
+        if (exactMatch && !hasLongerMatch) {
+            finishMorseSequence(executor, current)
+            return
+        }
+
+        val runnable = object : Runnable {
+            override fun run() {
+                synchronized(lock) {
+                    if (morseFinishRunnable === this && !pressed) finishMorseSequence(executor)
+                }
+            }
+        }
+        morseFinishRunnable = runnable
+        handler.postDelayed(runnable, activeSettings.morseCommandWindowMs)
+    }
+
+    private fun finishMorseSequence(executor: ActionExecutor, settings: AppSettings = SettingsReader.load()) {
+        morseFinishRunnable?.let(handler::removeCallbacks)
+        morseFinishRunnable = null
+        val sequence = morseSequence.toString()
+        morseSequence.clear()
+        if (sequence.isEmpty()) return
+        if (!settings.enabled || settings.operationMode != OperationMode.MORSE) return
+        val binding = settings.morseBindings.firstOrNull { it.sequence == sequence }
+        if (binding == null) {
+            executor.notifyUnknownMorseSequence(settings)
+            return
+        }
+        execute(binding.action, binding.custom, settings, executor, activeInteractive)
+    }
+
+    private fun resetMorseState() {
+        morseThresholdRunnable?.let(handler::removeCallbacks)
+        morseThresholdRunnable = null
+        morseFinishRunnable?.let(handler::removeCallbacks)
+        morseFinishRunnable = null
+        morseSequence.clear()
+        morseLongReached = false
     }
 
     private fun execute(
