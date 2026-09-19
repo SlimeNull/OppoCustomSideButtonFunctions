@@ -275,12 +275,6 @@ private fun CustomSideButtonApp() {
         skipCommittedReturn -> 0f
         else -> animatedRootOffset
     }
-    val animatedDetailProgress by animateFloatAsState(
-        targetValue = if (isPrimaryRoute(route)) 0f else 1f,
-        animationSpec = tween(PageTransitionDurationMs),
-        label = "Detail page progress"
-    )
-
     val selectedTab = when (route) {
         Route.Settings, Route.About -> BottomTab.SETTINGS
         else -> BottomTab.HOME
@@ -373,9 +367,11 @@ private fun CustomSideButtonApp() {
                         label = "Detail transition"
                     ) {
                         displayedDetail?.let { detail ->
+                            val clipDetail = predictiveTarget != null ||
+                                transition.currentState != transition.targetState
                             Box(Modifier.fillMaxSize().graphicsLayer {
                                 shape = RoundedCornerShape(cornerDp)
-                                clip = true
+                                clip = clipDetail
                             }.background(AppBackground)) {
                                 RouteScreen(detail, settings, ::navigate, ::persist, padding)
                             }
