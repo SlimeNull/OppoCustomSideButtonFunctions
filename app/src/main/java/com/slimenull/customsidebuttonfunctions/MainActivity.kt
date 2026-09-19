@@ -1,15 +1,18 @@
 package com.slimenull.customsidebuttonfunctions
 
+import android.os.Build
 import android.os.Bundle
+import android.view.RoundedCorner
 import android.view.SoundEffectConstants
 import android.view.View
+import android.view.ViewTreeObserver
+import android.view.WindowInsets
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.scaleIn
@@ -19,9 +22,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.keyframes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +82,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,8 +99,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.slimenull.customsidebuttonfunctions.data.SettingsStore
 import com.slimenull.customsidebuttonfunctions.model.ActionType
@@ -117,11 +121,7 @@ private val AppMuted = Color(0xFF718198)
 private val AppGreen = Color(0xFF2DAE78)
 private const val PageShadeOpacity = 0.24f
 private const val PageSlideFraction = 0.25f
-private const val PageTransitionDurationMs = 280
-private const val DetailCornerRampFraction = 0.2f
-private val DetailCornerRampMs = (PageTransitionDurationMs * DetailCornerRampFraction).toInt()
-private val DetailCornerRadius = 32.dp
-
+private const val PageTransitionDurationMs = 350
 private val AppColors = lightColorScheme(
     primary = AppBlue,
     onPrimary = Color.White,
@@ -199,6 +199,33 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun rememberScreenCornerRadius(): Dp {
+    val view = LocalView.current
+    var radiusPx by remember(view) { mutableIntStateOf(0) }
+
+    DisposableEffect(view) {
+        val observer = view.viewTreeObserver
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            radiusPx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                view.rootWindowInsets
+                    ?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+                    ?.radius ?: 0
+            } else {
+                0
+            }
+        }
+
+        observer.addOnGlobalLayoutListener(listener)
+        listener.onGlobalLayout()
+        onDispose {
+            if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+        }
+    }
+
+    return with(LocalDensity.current) { radiusPx.toDp() }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 private fun CustomSideButtonApp() {
@@ -248,12 +275,18 @@ private fun CustomSideButtonApp() {
         skipCommittedReturn -> 0f
         else -> animatedRootOffset
     }
+    val animatedDetailProgress by animateFloatAsState(
+        targetValue = if (isPrimaryRoute(route)) 0f else 1f,
+        animationSpec = tween(PageTransitionDurationMs),
+        label = "Detail page progress"
+    )
 
     val selectedTab = when (route) {
         Route.Settings, Route.About -> BottomTab.SETTINGS
         else -> BottomTab.HOME
     }
     val showBottomBar = route is Route.Home || route is Route.Settings || route is Route.About
+    val cornerDp = rememberScreenCornerRadius()
 
     PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.Settings) { progress ->
         val destination = backDestination(route)
@@ -262,7 +295,7 @@ private fun CustomSideButtonApp() {
             progress.collect { event ->
                 predictiveProgress.snapTo(event.progress.coerceIn(0f, 1f))
             }
-            predictiveProgress.animateTo(1f, tween(350))
+            predictiveProgress.animateTo(1f, tween(PageTransitionDurationMs))
             // Replace the transition host at commit so it cannot retain the outgoing page.
             routeTransitionEpoch++
             skipCommittedReturn = true
@@ -339,27 +372,11 @@ private fun CustomSideButtonApp() {
                             scaleOut(targetScale = 0.8f, animationSpec = tween(PageTransitionDurationMs)),
                         label = "Detail transition"
                     ) {
-                        val animatedCorner by transition.animateDp(
-                            transitionSpec = {
-                                keyframes {
-                                    durationMillis = PageTransitionDurationMs
-                                    if (targetState == EnterExitState.Visible) {
-                                        DetailCornerRadius at DetailCornerRampMs
-                                    } else {
-                                        DetailCornerRadius at PageTransitionDurationMs - DetailCornerRampMs
-                                    }
-                                }
-                            },
-                            label = "Detail corner radius"
-                        ) { state ->
-                            if (state == EnterExitState.Visible) DetailCornerRadius else 0.dp
-                        }
-                        val corner = if (predictiveTarget != null) {
-                            DetailCornerRadius * ((1f - predictiveProgress.value) / DetailCornerRampFraction).coerceIn(0f, 1f)
-                        } else animatedCorner
-
                         displayedDetail?.let { detail ->
-                            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(corner)).background(AppBackground)) {
+                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                shape = RoundedCornerShape(cornerDp)
+                                clip = true
+                            }.background(AppBackground)) {
                                 RouteScreen(detail, settings, ::navigate, ::persist, padding)
                             }
                         }
