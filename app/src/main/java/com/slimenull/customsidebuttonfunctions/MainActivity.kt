@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.scaleIn
@@ -18,7 +19,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.keyframes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -114,6 +117,10 @@ private val AppMuted = Color(0xFF718198)
 private val AppGreen = Color(0xFF2DAE78)
 private const val PageShadeOpacity = 0.24f
 private const val PageSlideFraction = 0.25f
+private const val PageTransitionDurationMs = 280
+private const val DetailCornerRampFraction = 0.2f
+private val DetailCornerRampMs = (PageTransitionDurationMs * DetailCornerRampFraction).toInt()
+private val DetailCornerRadius = 32.dp
 
 private val AppColors = lightColorScheme(
     primary = AppBlue,
@@ -223,7 +230,7 @@ private fun CustomSideButtonApp() {
 
     val animatedShade by animateFloatAsState(
         targetValue = if (route is Route.Home || route is Route.Settings) 0f else PageShadeOpacity,
-        animationSpec = tween(280),
+        animationSpec = tween(PageTransitionDurationMs),
         label = "Page shade"
     )
     val pageShade = when {
@@ -233,7 +240,7 @@ private fun CustomSideButtonApp() {
     }
     val animatedRootOffset by animateFloatAsState(
         targetValue = if (isPrimaryRoute(route)) 0f else -PageSlideFraction,
-        animationSpec = tween(280),
+        animationSpec = tween(PageTransitionDurationMs),
         label = "Primary page offset"
     )
     val rootOffset = when {
@@ -299,8 +306,8 @@ private fun CustomSideButtonApp() {
                     }.background(AppBackground),
                     transitionSpec = {
                         val direction = routeDirection(initialState, targetState)
-                        (slideInHorizontally(tween(280)) { (it * PageSlideFraction * direction).toInt() } togetherWith
-                            slideOutHorizontally(tween(280)) { (-it * PageSlideFraction * direction).toInt() })
+                        (slideInHorizontally(tween(PageTransitionDurationMs)) { it * direction } togetherWith
+                            slideOutHorizontally(tween(PageTransitionDurationMs)) { -it * direction })
                             .using(SizeTransform(clip = true))
                     },
                     label = "Tab transition"
@@ -326,14 +333,33 @@ private fun CustomSideButtonApp() {
                             scaleX = 1f - 0.2f * progress
                             scaleY = 1f - 0.2f * progress
                         },
-                        enter = slideInHorizontally(tween(280)) { it } +
-                            scaleIn(initialScale = 0.8f, animationSpec = tween(280)),
-                        exit = slideOutHorizontally(tween(280)) { it } +
-                            scaleOut(targetScale = 0.8f, animationSpec = tween(280)),
+                        enter = slideInHorizontally(tween(PageTransitionDurationMs)) { it } +
+                            scaleIn(initialScale = 0.8f, animationSpec = tween(PageTransitionDurationMs)),
+                        exit = slideOutHorizontally(tween(PageTransitionDurationMs)) { it } +
+                            scaleOut(targetScale = 0.8f, animationSpec = tween(PageTransitionDurationMs)),
                         label = "Detail transition"
                     ) {
+                        val animatedCorner by transition.animateDp(
+                            transitionSpec = {
+                                keyframes {
+                                    durationMillis = PageTransitionDurationMs
+                                    if (targetState == EnterExitState.Visible) {
+                                        DetailCornerRadius at DetailCornerRampMs
+                                    } else {
+                                        DetailCornerRadius at PageTransitionDurationMs - DetailCornerRampMs
+                                    }
+                                }
+                            },
+                            label = "Detail corner radius"
+                        ) { state ->
+                            if (state == EnterExitState.Visible) DetailCornerRadius else 0.dp
+                        }
+                        val corner = if (predictiveTarget != null) {
+                            DetailCornerRadius * ((1f - predictiveProgress.value) / DetailCornerRampFraction).coerceIn(0f, 1f)
+                        } else animatedCorner
+
                         displayedDetail?.let { detail ->
-                            Box(Modifier.fillMaxSize().background(AppBackground)) {
+                            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(corner)).background(AppBackground)) {
                                 RouteScreen(detail, settings, ::navigate, ::persist, padding)
                             }
                         }
