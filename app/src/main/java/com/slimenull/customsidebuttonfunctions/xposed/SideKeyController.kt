@@ -198,7 +198,7 @@ internal class SideKeyController {
         val hasLongerMatch = current.morseBindings.any {
             it.sequence.length > sequence.length && it.sequence.startsWith(sequence)
         }
-        if (exactMatch && !hasLongerMatch) {
+        if (current.morseImmediateExecutionEnabled && exactMatch && !hasLongerMatch) {
             finishMorseSequence(executor, current)
             return
         }

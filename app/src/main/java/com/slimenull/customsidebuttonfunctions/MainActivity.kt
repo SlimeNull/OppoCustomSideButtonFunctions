@@ -659,7 +659,7 @@ private fun MorseScreen(
                     persist(settings.copy(morseCommandWindowMs = it))
                 }
             }
-            item { SectionLabel("按键提示（50ms）") }
+            item { SectionLabel("按键设置") }
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
@@ -667,8 +667,12 @@ private fun MorseScreen(
                             persist(settings.copy(morsePressVibrationEnabled = it))
                         }
                         HorizontalDivider(color = Color(0xFFEAF0F7))
-                        SettingSwitchRow("达到长按时振动", settings.morseLongVibrationEnabled) {
+                        SettingSwitchRow("持续按到长按时间时振动", settings.morseLongVibrationEnabled) {
                             persist(settings.copy(morseLongVibrationEnabled = it))
+                        }
+                        HorizontalDivider(color = Color(0xFFEAF0F7))
+                        SettingSwitchRow("尽可能立即执行操作", settings.morseImmediateExecutionEnabled) {
+                            persist(settings.copy(morseImmediateExecutionEnabled = it))
                         }
                     }
                 }

@@ -29,6 +29,7 @@ object SettingsStore {
     private const val KEY_MORSE_COMMAND_WINDOW_MS = "morse_command_window_ms"
     private const val KEY_MORSE_PRESS_VIBRATION = "morse_press_vibration"
     private const val KEY_MORSE_LONG_VIBRATION = "morse_long_vibration"
+    private const val KEY_MORSE_IMMEDIATE_EXECUTION = "morse_immediate_execution"
     private const val KEY_MORSE_BINDINGS = "morse_bindings"
     private const val KEY_VIBRATION_ENABLED = "vibration_enabled"
     private const val KEY_VIBRATION_DURATION_MS = "vibration_duration_ms"
@@ -82,6 +83,7 @@ object SettingsStore {
             .putLong(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
             .putBoolean(KEY_MORSE_PRESS_VIBRATION, settings.morsePressVibrationEnabled)
             .putBoolean(KEY_MORSE_LONG_VIBRATION, settings.morseLongVibrationEnabled)
+            .putBoolean(KEY_MORSE_IMMEDIATE_EXECUTION, settings.morseImmediateExecutionEnabled)
             .putString(KEY_MORSE_BINDINGS, writeMorseBindings(settings.morseBindings))
             .also { writeCustom(it, "single_", settings.singleCustom) }
             .also { writeCustom(it, "double_", settings.doubleCustom) }
@@ -110,8 +112,9 @@ object SettingsStore {
             ?.let { runCatching { OperationMode.valueOf(it) }.getOrNull() } ?: OperationMode.SIMPLE,
         morseLongPressMs = preferences.getLong(KEY_MORSE_LONG_PRESS_MS, 350L).coerceIn(100L, 2_000L),
         morseCommandWindowMs = preferences.getLong(KEY_MORSE_COMMAND_WINDOW_MS, 350L).coerceIn(100L, 2_000L),
-        morsePressVibrationEnabled = preferences.getBoolean(KEY_MORSE_PRESS_VIBRATION, true),
+        morsePressVibrationEnabled = preferences.getBoolean(KEY_MORSE_PRESS_VIBRATION, false),
         morseLongVibrationEnabled = preferences.getBoolean(KEY_MORSE_LONG_VIBRATION, true),
+        morseImmediateExecutionEnabled = preferences.getBoolean(KEY_MORSE_IMMEDIATE_EXECUTION, true),
         morseBindings = readMorseBindings(preferences.getString(KEY_MORSE_BINDINGS, null)),
         singleCustom = readCustom(preferences, "single_"),
         doubleCustom = readCustom(preferences, "double_"),
