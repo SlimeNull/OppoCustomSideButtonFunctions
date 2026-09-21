@@ -62,10 +62,4 @@
 .\gradlew.bat :app:assembleRelease
 ```
 
-每个 Debug/Release 构建都会按 ABI 分别生成三个 APK，不生成包含全部架构的 universal APK：
-
-- `arm64-v8a`
-- `armeabi-v7a`
-- `x86_64`
-
-产物位于 `app/build/outputs/apk/debug/` 或 `app/build/outputs/apk/release/`，文件名会包含对应 ABI。Release 构建使用 `keystore/keystore.properties` 中配置的签名信息。
+产物位于 `app/build/outputs/apk/debug/` 或 `app/build/outputs/apk/release/`。Release 构建使用 `keystore/keystore.properties` 中配置的签名信息。
