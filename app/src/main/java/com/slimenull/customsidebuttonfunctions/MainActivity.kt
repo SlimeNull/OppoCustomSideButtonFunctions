@@ -1,5 +1,8 @@
 package com.slimenull.customsidebuttonfunctions
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.RoundedCorner
@@ -119,7 +122,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -184,7 +186,7 @@ private val AppColors = lightColorScheme(
     scrim = Color.Black
 )
 
-private enum class BottomTab { HOME, SETTINGS }
+private enum class BottomTab { HOME, ABOUT }
 
 private enum class GestureKind(val title: String, val subtitle: String) {
     SINGLE("单击", "按下并松开后立即触发"),
@@ -194,11 +196,10 @@ private enum class GestureKind(val title: String, val subtitle: String) {
 
 private sealed interface Route {
     data object Home : Route
-    data object Settings : Route
+    data object About : Route
     data object Morse : Route
     data object Feedback : Route
     data object Advanced : Route
-    data object About : Route
     data class Gesture(val kind: GestureKind) : Route
 }
 
@@ -278,10 +279,10 @@ private fun CustomSideButtonApp() {
         }
     }
 
-    val primaryRoute: Route = if (route is Route.Settings || route is Route.About) Route.Settings else Route.Home
+    val primaryRoute: Route = if (route is Route.About) Route.About else Route.Home
 
     val animatedShade by animateFloatAsState(
-        targetValue = if (route is Route.Home || route is Route.Settings) 0f else PageShadeOpacity,
+        targetValue = if (route is Route.Home || route is Route.About) 0f else PageShadeOpacity,
         animationSpec = tween(PageTransitionDurationMs),
         label = "Page shade"
     )
@@ -302,8 +303,8 @@ private fun CustomSideButtonApp() {
     }
     val cornerDp = rememberScreenCornerRadius()
 
-    PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.Settings) { progress ->
-        val destination = backDestination(route)
+    PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.About) { progress ->
+        val destination = backDestination()
         try {
             predictiveTarget = destination
             progress.collect { event ->
@@ -338,7 +339,7 @@ private fun CustomSideButtonApp() {
                     rootOffset = rootOffset,
                     onTabSelected = { tab ->
                         clickSound(view)
-                        navigate(if (tab == BottomTab.HOME) Route.Home else Route.Settings)
+                        navigate(if (tab == BottomTab.HOME) Route.Home else Route.About)
                     }
                 )
 
@@ -401,7 +402,7 @@ private fun PrimaryPageLayer(
     rootOffset: Float,
     onTabSelected: (BottomTab) -> Unit
 ) {
-    val selectedTab = if (primaryRoute == Route.Settings) BottomTab.SETTINGS else BottomTab.HOME
+    val selectedTab = if (primaryRoute == Route.About) BottomTab.ABOUT else BottomTab.HOME
     Column(
         Modifier.fillMaxSize()
             .graphicsLayer { translationX = contentWidth * rootOffset }
@@ -412,7 +413,7 @@ private fun PrimaryPageLayer(
                 targetState = primaryRoute,
                 modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
-                    val direction = routeDirection(initialState, targetState)
+                    val direction = routeDirection(targetState)
                     (slideInHorizontally(tween(PageTransitionDurationMs)) { it * direction } togetherWith
                         slideOutHorizontally(tween(PageTransitionDurationMs)) { -it * direction })
                         .using(SizeTransform(clip = true))
@@ -436,24 +437,20 @@ private fun PrimaryPageLayer(
                 label = { Text("首页") }
             )
             NavigationBarItem(
-                selected = selectedTab == BottomTab.SETTINGS,
-                onClick = { onTabSelected(BottomTab.SETTINGS) },
-                icon = { Icon(Icons.Default.Settings, contentDescription = "设置") },
-                label = { Text("设置") }
+                selected = selectedTab == BottomTab.ABOUT,
+                onClick = { onTabSelected(BottomTab.ABOUT) },
+                icon = { Icon(Icons.Default.Info, contentDescription = "关于") },
+                label = { Text("关于") }
             )
         }
     }
 }
 
-private fun backDestination(route: Route): Route =
-    if (route is Route.About) Route.Settings else Route.Home
+private fun backDestination(): Route = Route.Home
 
-private fun isPrimaryRoute(route: Route): Boolean = route is Route.Home || route is Route.Settings
+private fun isPrimaryRoute(route: Route): Boolean = route is Route.Home || route is Route.About
 
-private fun routeDirection(from: Route, to: Route): Int = when {
-    to == Route.Home || (from == Route.About && to == Route.Settings) -> -1
-    else -> 1
-}
+private fun routeDirection(to: Route): Int = if (to == Route.Home) -1 else 1
 
 @Composable
 private fun RouteScreen(
@@ -465,9 +462,8 @@ private fun RouteScreen(
 ) {
     when (route) {
         Route.Home -> HomeScreen(settings, navigate, persist, padding)
-        Route.Settings -> SettingsScreen(navigate, padding)
+        Route.About -> AboutScreen(padding)
         Route.Morse -> MorseScreen(settings, persist, { navigate(Route.Home) }, padding)
-        Route.About -> AboutScreen(navigate, padding)
         Route.Feedback -> FeedbackScreen(settings, persist, { navigate(Route.Home) }, padding)
         Route.Advanced -> AdvancedScreen(settings, persist, { navigate(Route.Home) }, padding)
         is Route.Gesture -> GestureScreen(route.kind, settings, persist, { navigate(Route.Home) }, padding)
@@ -612,8 +608,8 @@ private fun GestureScreen(
     var sliderValue by remember(kind, settings) {
         mutableFloatStateOf(
             when (kind) {
-                GestureKind.DOUBLE -> settings.doubleClickWindowMs.toFloat()
-                GestureKind.LONG -> settings.longPressMs.toFloat()
+                GestureKind.DOUBLE -> settings.doubleClickWindowMs.coerceIn(100L, 800L).toFloat()
+                GestureKind.LONG -> settings.longPressMs.coerceIn(100L, 800L).toFloat()
                 GestureKind.SINGLE -> 0f
             }
         )
@@ -652,14 +648,14 @@ private fun GestureScreen(
                                     val value = sliderValue.toLong()
                                     persist(if (kind == GestureKind.DOUBLE) settings.copy(doubleClickWindowMs = value) else settings.copy(longPressMs = value))
                                 },
-                                valueRange = if (kind == GestureKind.DOUBLE) 100f..1000f else 200f..3000f,
+                                valueRange = 100f..800f,
                                 modifier = Modifier.weight(1f)
                             )
                             ValuePill("${sliderValue.toLong()} ms")
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(if (kind == GestureKind.DOUBLE) "100ms" else "200ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
-                            Text(if (kind == GestureKind.DOUBLE) "1000ms" else "3000ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                            Text("100ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                            Text("800ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
                         }
                     }
                 }
@@ -712,35 +708,6 @@ private fun MorseScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item { SectionLabel("判定时间") }
-            item {
-                MorseTimingCard("长按持续时间", settings.morseLongPressMs) {
-                    persist(settings.copy(morseLongPressMs = it))
-                }
-            }
-            item {
-                MorseTimingCard("指令判断等待时间", settings.morseCommandWindowMs) {
-                    persist(settings.copy(morseCommandWindowMs = it))
-                }
-            }
-            item { SectionLabel("按键设置") }
-            item {
-                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                    Column(Modifier.padding(14.dp)) {
-                        SettingSwitchRow("按下时振动", settings.morsePressVibrationEnabled) {
-                            persist(settings.copy(morsePressVibrationEnabled = it))
-                        }
-                        HorizontalDivider(color = Color(0xFFEAF0F7))
-                        SettingSwitchRow("持续按到长按时间时振动", settings.morseLongVibrationEnabled) {
-                            persist(settings.copy(morseLongVibrationEnabled = it))
-                        }
-                        HorizontalDivider(color = Color(0xFFEAF0F7))
-                        SettingSwitchRow("尽可能立即执行操作", settings.morseImmediateExecutionEnabled) {
-                            persist(settings.copy(morseImmediateExecutionEnabled = it))
-                        }
-                    }
-                }
-            }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {
@@ -763,7 +730,7 @@ private fun MorseScreen(
                             editing = binding
                             editorOpen = true
                         }) {
-                            Text(binding.sequence, fontFamily = FontFamily.Monospace,
+                            Text(morseSequenceTitle(binding.sequence),
                                 fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(morseActionTitle(binding), color = AppMuted,
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2,
@@ -776,6 +743,35 @@ private fun MorseScreen(
                             Icon(Icons.Default.DeleteOutline, contentDescription = "删除指令")
                         }
                     }
+                }
+            }
+            item { SectionLabel("按键设置") }
+            item {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp)) {
+                        SettingSwitchRow("按下时振动", settings.morsePressVibrationEnabled) {
+                            persist(settings.copy(morsePressVibrationEnabled = it))
+                        }
+                        HorizontalDivider(color = Color(0xFFEAF0F7))
+                        SettingSwitchRow("持续按到长按时间时振动", settings.morseLongVibrationEnabled) {
+                            persist(settings.copy(morseLongVibrationEnabled = it))
+                        }
+                        HorizontalDivider(color = Color(0xFFEAF0F7))
+                        SettingSwitchRow("尽可能立即执行操作", settings.morseImmediateExecutionEnabled) {
+                            persist(settings.copy(morseImmediateExecutionEnabled = it))
+                        }
+                    }
+                }
+            }
+            item { SectionLabel("判定时间") }
+            item {
+                MorseTimingCard("长按持续时间", settings.morseLongPressMs) {
+                    persist(settings.copy(morseLongPressMs = it))
+                }
+            }
+            item {
+                MorseTimingCard("指令判断等待时间", settings.morseCommandWindowMs) {
+                    persist(settings.copy(morseCommandWindowMs = it))
                 }
             }
         }
@@ -815,7 +811,9 @@ private fun MorseScreen(
 @Composable
 private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit) {
     val view = LocalView.current
-    var sliderValue by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    var sliderValue by remember(value) {
+        mutableFloatStateOf(value.coerceIn(100L, 800L).toFloat())
+    }
     Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(14.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
@@ -824,7 +822,7 @@ private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit
                     value = sliderValue,
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = { clickSound(view); onChange(sliderValue.toLong()) },
-                    valueRange = 100f..2000f,
+                    valueRange = 100f..800f,
                     modifier = Modifier.weight(1f)
                 )
                 Box(
@@ -837,7 +835,7 @@ private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("100ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
-                Text("2000ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                Text("800ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
             }
         }
     }
@@ -845,6 +843,9 @@ private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit
 
 private fun morseActionTitle(binding: MorseBinding): String =
     if (binding.action == ActionType.COMMON_FUNCTION) binding.custom.commonAction.title else binding.action.title
+
+private fun morseSequenceTitle(sequence: String): String =
+    sequence.map { if (it == '0') "短" else "长" }.joinToString("")
 
 @Composable
 private fun MorseBindingEditorDialog(
@@ -897,10 +898,6 @@ private fun MorseBindingEditorDialog(
                     IconButton(onClick = { clickSound(view); if (sequence.isNotEmpty()) sequence = sequence.dropLast(1) }) {
                         Icon(Icons.Default.Backspace, contentDescription = "删除末位")
                     }
-                }
-                if (sequence.isNotEmpty()) {
-                    Text(sequence.map { if (it == '0') "短" else "长" }.joinToString(" "),
-                        color = AppMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 SectionLabel("执行动作")
                 ActionPicker(selected, morseActionChoices) { choice ->
@@ -1038,38 +1035,11 @@ private fun AdvancedScreen(settings: AppSettings, persist: (AppSettings) -> Unit
 }
 
 @Composable
-private fun SettingsScreen(navigate: (Route) -> Unit, padding: PaddingValues) {
+private fun AboutScreen(padding: PaddingValues) {
+    val context = LocalContext.current
+    val view = LocalView.current
     Column(Modifier.fillMaxSize().padding(padding)) {
-        Text("设置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp))
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          item { SectionLabel("应用信息") }
-          item {
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconBadge(Icons.Default.Tune)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text("一加侧键自定义功能", fontWeight = FontWeight.SemiBold)
-                        Text("com.slimenull.customsidebuttonfunctions", style = MaterialTheme.typography.bodySmall, color = AppMuted)
-                        Text("版本 1.0.0", style = MaterialTheme.typography.bodySmall, color = AppMuted)
-                    }
-                }
-            }
-          }
-          item { SettingRow(Icons.Default.Code, "开源许可", "Apache-2.0") { } }
-          item { SettingRow(Icons.Default.Info, "关于我们", "项目与版本信息") { navigate(Route.About) } }
-        }
-    }
-}
-
-@Composable
-private fun AboutScreen(navigate: (Route) -> Unit, padding: PaddingValues) {
-    Column(Modifier.fillMaxSize().padding(padding)) {
-        BackTitle("关于我们") { navigate(Route.Settings) }
+        Text("关于", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp))
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
@@ -1085,17 +1055,63 @@ private fun AboutScreen(navigate: (Route) -> Unit, padding: PaddingValues) {
             Text("com.slimenull.customsidebuttonfunctions", style = MaterialTheme.typography.bodySmall, color = AppMuted, modifier = Modifier.padding(top = 8.dp))
             Text("版本 1.0.0", style = MaterialTheme.typography.bodySmall, color = AppMuted)
           }
-          item {
-            Spacer(Modifier.height(22.dp))
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+           item {
+             Spacer(Modifier.height(22.dp))
+             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text("开发者", style = MaterialTheme.typography.labelMedium, color = AppMuted)
                     Text("SlimeNull Issac", modifier = Modifier.padding(top = 4.dp))
-                }
-            }
-          }
-          item { SettingRow(Icons.Default.OpenInNew, "开源项目", "GitHub") { } }
+                 }
+             }
+           }
+           item {
+             Row(
+                 Modifier.fillMaxWidth(),
+                 horizontalArrangement = Arrangement.spacedBy(10.dp)
+             ) {
+                 OutlinedButton(
+                     onClick = {
+                         clickSound(view)
+                         openExternalUrl(context, "https://www.gnu.org/licenses/lgpl-3.0.html")
+                     },
+                     modifier = Modifier.weight(1f)
+                 ) {
+                     Icon(Icons.Default.Code, contentDescription = null)
+                     Spacer(Modifier.width(6.dp))
+                     Text("许可证")
+                 }
+                 OutlinedButton(
+                     onClick = {
+                         clickSound(view)
+                         openExternalUrl(context, "https://github.com/SlimeNull/OppoCustomSideButtonFunctions")
+                     },
+                     modifier = Modifier.weight(1f)
+                 ) {
+                     Icon(Icons.Default.OpenInNew, contentDescription = null)
+                     Spacer(Modifier.width(6.dp))
+                     Text("仓库")
+                 }
+             }
+           }
+           item {
+             Text(
+                 "GNU Lesser General Public License v3.0",
+                 style = MaterialTheme.typography.bodySmall,
+                 color = AppMuted,
+                 modifier = Modifier.fillMaxWidth(),
+                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
+             )
+           }
         }
+    }
+}
+
+private fun openExternalUrl(context: Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+        )
     }
 }
 
