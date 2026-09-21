@@ -2,6 +2,10 @@
 
 通过 Xposed/LSPosed 为一加、OPPO 等设备的侧边快捷键配置操作。应用提供 Compose 设置界面，按键拦截与动作执行主要运行在 Android 系统框架进程中。包名为 `com.slimenull.customsidebuttonfunctions`。
 
+<div align="center">
+  <img src="images/preview.webp" alt="preview image" >
+</div>
+
 ## 安装与启用
 
 1. 安装 APK，在 LSPosed/Vector 中启用模块，并将 **Android 系统框架（`android`）** 加入作用域。
@@ -58,4 +62,10 @@
 .\gradlew.bat :app:assembleRelease
 ```
 
-调试包位于 `app/build/outputs/apk/debug/app-debug.apk`。Release 构建使用 `keystore/keystore.properties` 中配置的签名信息。
+每个 Debug/Release 构建都会按 ABI 分别生成三个 APK，不生成包含全部架构的 universal APK：
+
+- `arm64-v8a`
+- `armeabi-v7a`
+- `x86_64`
+
+产物位于 `app/build/outputs/apk/debug/` 或 `app/build/outputs/apk/release/`，文件名会包含对应 ABI。Release 构建使用 `keystore/keystore.properties` 中配置的签名信息。
