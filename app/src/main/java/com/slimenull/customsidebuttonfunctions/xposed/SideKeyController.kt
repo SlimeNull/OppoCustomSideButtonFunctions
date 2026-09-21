@@ -25,6 +25,7 @@ internal class SideKeyController {
     private var morseDownAt = 0L
     private var morseLastUpAt = 0L
     private var morseLongReached = false
+    private var morseTriggeredWhilePressed = false
     private var morseThresholdRunnable: Runnable? = null
     private var morseFinishRunnable: Runnable? = null
 
@@ -153,6 +154,7 @@ internal class SideKeyController {
         pressed = true
         morseDownAt = now
         morseLongReached = false
+        morseTriggeredWhilePressed = false
         if (activeSettings.morsePressVibrationEnabled) executor.vibrateMorseCue()
 
         val runnable = object : Runnable {
@@ -165,6 +167,19 @@ internal class SideKeyController {
                             return@synchronized
                         }
                         morseLongReached = true
+                        val sequence = morseSequence.toString() + '1'
+                        val binding = current.morseBindings.firstOrNull { it.sequence == sequence }
+                        val hasLongerMatch = current.morseBindings.any {
+                            it.sequence.length > sequence.length && it.sequence.startsWith(sequence)
+                        }
+                        if (current.morseImmediateExecutionEnabled && binding != null && !hasLongerMatch) {
+                            morseTriggeredWhilePressed = true
+                            morseSequence.clear()
+                            morseFinishRunnable?.let(handler::removeCallbacks)
+                            morseFinishRunnable = null
+                            execute(binding.action, binding.custom, current, executor, activeInteractive)
+                            return@synchronized
+                        }
                         if (activeSettings.morseLongVibrationEnabled) executor.vibrateMorseCue()
                     }
                 }
@@ -179,6 +194,14 @@ internal class SideKeyController {
         pressed = false
         morseThresholdRunnable?.let(handler::removeCallbacks)
         morseThresholdRunnable = null
+        if (morseTriggeredWhilePressed) {
+            morseTriggeredWhilePressed = false
+            morseSequence.clear()
+            morseFinishRunnable?.let(handler::removeCallbacks)
+            morseFinishRunnable = null
+            morseLongReached = false
+            return
+        }
         val now = SystemClock.uptimeMillis()
         val isLong = morseLongReached || now - morseDownAt >= activeSettings.morseLongPressMs
         if (isLong && !morseLongReached && activeSettings.morseLongVibrationEnabled) {
@@ -236,6 +259,7 @@ internal class SideKeyController {
         morseFinishRunnable = null
         morseSequence.clear()
         morseLongReached = false
+        morseTriggeredWhilePressed = false
     }
 
     private fun execute(
