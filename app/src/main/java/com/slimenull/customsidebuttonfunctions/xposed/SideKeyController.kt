@@ -155,7 +155,7 @@ internal class SideKeyController {
         morseDownAt = now
         morseLongReached = false
         morseTriggeredWhilePressed = false
-        if (activeSettings.morsePressVibrationEnabled) executor.vibrateMorseCue()
+        if (activeSettings.morsePressVibrationEnabled) executor.vibrateInstantCue()
 
         val runnable = object : Runnable {
             override fun run() {
@@ -180,7 +180,7 @@ internal class SideKeyController {
                             execute(binding.action, binding.custom, current, executor, activeInteractive)
                             return@synchronized
                         }
-                        if (activeSettings.morseLongVibrationEnabled) executor.vibrateMorseCue()
+                            if (activeSettings.morseLongVibrationEnabled) executor.vibrateInstantCue()
                     }
                 }
             }
@@ -205,7 +205,7 @@ internal class SideKeyController {
         val now = SystemClock.uptimeMillis()
         val isLong = morseLongReached || now - morseDownAt >= activeSettings.morseLongPressMs
         if (isLong && !morseLongReached && activeSettings.morseLongVibrationEnabled) {
-            executor.vibrateMorseCue()
+            executor.vibrateInstantCue()
         }
         morseSequence.append(if (isLong) '1' else '0')
         activeInteractive = activeInteractive && interactive

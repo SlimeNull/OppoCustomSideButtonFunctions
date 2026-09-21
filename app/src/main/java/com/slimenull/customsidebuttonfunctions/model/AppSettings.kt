@@ -22,7 +22,6 @@ data class AppSettings(
     val doubleCustom: CustomActionSettings = CustomActionSettings(),
     val longCustom: CustomActionSettings = CustomActionSettings(),
     val vibrationEnabled: Boolean = true,
-    val vibrationDurationMs: Long = 50L,
     val toastEnabled: Boolean = false,
     val toastText: String = "侧键操作已执行",
     val unknownMorseFeedbackEnabled: Boolean = false,

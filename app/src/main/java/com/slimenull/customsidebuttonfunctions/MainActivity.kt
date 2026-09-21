@@ -570,7 +570,7 @@ private fun HomeScreen(
             }
             item { SectionLabel("其他设置") }
             item {
-                SettingRow(Icons.Default.Vibration, "振动与提示", "配置振动时长和 Toast 提示") { navigate(Route.Feedback) }
+                SettingRow(Icons.Default.Vibration, "振动与提示", "配置触发振动和 Toast 提示") { navigate(Route.Feedback) }
             }
             item {
                 SettingRow(Icons.Default.Settings, "高级设置", "设备输入与息屏行为") { navigate(Route.Advanced) }
@@ -922,8 +922,6 @@ private fun MorseBindingEditorDialog(
 
 @Composable
 private fun FeedbackScreen(settings: AppSettings, persist: (AppSettings) -> Unit, back: () -> Unit, padding: PaddingValues) {
-    val view = LocalView.current
-    var vibrationValue by remember(settings.vibrationDurationMs) { mutableFloatStateOf(settings.vibrationDurationMs.toFloat()) }
     Column(Modifier.fillMaxSize().padding(padding)) {
         BackTitle("振动与提示", back)
         LazyColumn(
@@ -936,22 +934,6 @@ private fun FeedbackScreen(settings: AppSettings, persist: (AppSettings) -> Unit
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(14.dp)) {
                     SettingSwitchRow("触发时振动", settings.vibrationEnabled) { persist(settings.copy(vibrationEnabled = it)) }
-                    Spacer(Modifier.height(4.dp))
-                    Text("振动时长", style = MaterialTheme.typography.labelLarge, color = AppMuted)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Slider(
-                            value = vibrationValue,
-                            onValueChange = { vibrationValue = it },
-                            onValueChangeFinished = { clickSound(view); persist(settings.copy(vibrationDurationMs = vibrationValue.toLong())) },
-                            valueRange = 50f..1000f,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ValuePill("${vibrationValue.toLong()} ms")
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("50ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
-                        Text("1000ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
-                    }
                 }
             }
           }

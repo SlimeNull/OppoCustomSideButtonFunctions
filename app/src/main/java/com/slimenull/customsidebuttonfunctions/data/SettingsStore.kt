@@ -32,7 +32,6 @@ object SettingsStore {
     private const val KEY_MORSE_IMMEDIATE_EXECUTION = "morse_immediate_execution"
     private const val KEY_MORSE_BINDINGS = "morse_bindings"
     private const val KEY_VIBRATION_ENABLED = "vibration_enabled"
-    private const val KEY_VIBRATION_DURATION_MS = "vibration_duration_ms"
     private const val KEY_TOAST_ENABLED = "toast_enabled"
     private const val KEY_TOAST_TEXT = "toast_text"
     private const val KEY_UNKNOWN_MORSE_FEEDBACK = "unknown_morse_feedback"
@@ -89,7 +88,6 @@ object SettingsStore {
             .also { writeCustom(it, "double_", settings.doubleCustom) }
             .also { writeCustom(it, "long_", settings.longCustom) }
             .putBoolean(KEY_VIBRATION_ENABLED, settings.vibrationEnabled)
-            .putLong(KEY_VIBRATION_DURATION_MS, settings.vibrationDurationMs)
             .putBoolean(KEY_TOAST_ENABLED, settings.toastEnabled)
             .putString(KEY_TOAST_TEXT, settings.toastText)
             .putBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, settings.unknownMorseFeedbackEnabled)
@@ -120,7 +118,6 @@ object SettingsStore {
         doubleCustom = readCustom(preferences, "double_"),
         longCustom = readCustom(preferences, "long_"),
         vibrationEnabled = preferences.getBoolean(KEY_VIBRATION_ENABLED, true),
-        vibrationDurationMs = preferences.getLong(KEY_VIBRATION_DURATION_MS, 50L).coerceIn(1L, 2_000L),
         toastEnabled = preferences.getBoolean(KEY_TOAST_ENABLED, false),
         toastText = preferences.getString(KEY_TOAST_TEXT, "侧键操作已执行") ?: "侧键操作已执行",
         unknownMorseFeedbackEnabled = preferences.getBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, false),
