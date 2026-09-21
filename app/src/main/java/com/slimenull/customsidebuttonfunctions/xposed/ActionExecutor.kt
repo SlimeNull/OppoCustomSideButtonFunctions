@@ -51,7 +51,7 @@ internal class ActionExecutor {
         val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
         showToast(currentContext, settings.unknownMorseToastText.ifBlank { DEFAULT_UNKNOWN_MORSE_TOAST })
         vibrateInstant(currentContext)
-        Handler(Looper.getMainLooper()).postDelayed({ vibrateInstantCue() }, 50L)
+        Handler(Looper.getMainLooper()).postDelayed({ vibrateInstantCue() }, 100L)
     }
 
     fun execute(
