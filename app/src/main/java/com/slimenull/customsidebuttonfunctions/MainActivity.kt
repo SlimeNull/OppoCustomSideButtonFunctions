@@ -15,6 +15,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
@@ -298,11 +300,6 @@ private fun CustomSideButtonApp() {
         skipCommittedReturn -> 0f
         else -> animatedRootOffset
     }
-    val selectedTab = when (route) {
-        Route.Settings, Route.About -> BottomTab.SETTINGS
-        else -> BottomTab.HOME
-    }
-    val showBottomBar = route is Route.Home || route is Route.Settings || route is Route.About
     val cornerDp = rememberScreenCornerRadius()
 
     PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.Settings) { progress ->
@@ -328,42 +325,22 @@ private fun CustomSideButtonApp() {
 
     MaterialTheme(colorScheme = AppColors) {
         Scaffold(
-            containerColor = AppBackground,
-            bottomBar = {
-                if (showBottomBar) {
-                    NavigationBar(containerColor = Color.White) {
-                        NavigationBarItem(
-                            selected = selectedTab == BottomTab.HOME,
-                            onClick = { clickSound(view); navigate(Route.Home) },
-                            icon = { Icon(Icons.Default.Home, contentDescription = "首页") },
-                            label = { Text("首页") }
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == BottomTab.SETTINGS,
-                            onClick = { clickSound(view); navigate(Route.Settings) },
-                            icon = { Icon(Icons.Default.Settings, contentDescription = "设置") },
-                            label = { Text("设置") }
-                        )
-                    }
-                }
-            }
+            containerColor = AppBackground
         ) { padding ->
             Box(Modifier.fillMaxSize().onSizeChanged { contentWidth = it.width.toFloat() }) {
-                AnimatedContent(
-                    targetState = primaryRoute,
-                    modifier = Modifier.fillMaxSize().graphicsLayer {
-                        translationX = contentWidth * rootOffset
-                    }.background(AppBackground),
-                    transitionSpec = {
-                        val direction = routeDirection(initialState, targetState)
-                        (slideInHorizontally(tween(PageTransitionDurationMs)) { it * direction } togetherWith
-                            slideOutHorizontally(tween(PageTransitionDurationMs)) { -it * direction })
-                            .using(SizeTransform(clip = true))
-                    },
-                    label = "Tab transition"
-                ) { current ->
-                    RouteScreen(current, settings, ::navigate, ::persist, padding)
-                }
+                PrimaryPageLayer(
+                    primaryRoute = primaryRoute,
+                    settings = settings,
+                    navigate = ::navigate,
+                    persist = ::persist,
+                    padding = padding,
+                    contentWidth = contentWidth,
+                    rootOffset = rootOffset,
+                    onTabSelected = { tab ->
+                        clickSound(view)
+                        navigate(if (tab == BottomTab.HOME) Route.Home else Route.Settings)
+                    }
+                )
 
                 Box(Modifier.fillMaxSize()
                     .background(Color.Black.copy(alpha = pageShade))
@@ -396,12 +373,74 @@ private fun CustomSideButtonApp() {
                                 shape = RoundedCornerShape(cornerDp)
                                 clip = clipDetail
                             }.background(AppBackground)) {
-                                RouteScreen(detail, settings, ::navigate, ::persist, padding)
+                                RouteScreen(
+                                    route = detail,
+                                    settings = settings,
+                                    navigate = ::navigate,
+                                    persist = ::persist,
+                                    padding = padding
+                                )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun PrimaryPageLayer(
+    primaryRoute: Route,
+    settings: AppSettings,
+    navigate: (Route) -> Unit,
+    persist: (AppSettings) -> Unit,
+    padding: PaddingValues,
+    contentWidth: Float,
+    rootOffset: Float,
+    onTabSelected: (BottomTab) -> Unit
+) {
+    val selectedTab = if (primaryRoute == Route.Settings) BottomTab.SETTINGS else BottomTab.HOME
+    Column(
+        Modifier.fillMaxSize()
+            .graphicsLayer { translationX = contentWidth * rootOffset }
+            .background(AppBackground)
+    ) {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            AnimatedContent(
+                targetState = primaryRoute,
+                modifier = Modifier.fillMaxSize(),
+                transitionSpec = {
+                    val direction = routeDirection(initialState, targetState)
+                    (slideInHorizontally(tween(PageTransitionDurationMs)) { it * direction } togetherWith
+                        slideOutHorizontally(tween(PageTransitionDurationMs)) { -it * direction })
+                        .using(SizeTransform(clip = true))
+                },
+                label = "Tab transition"
+            ) { current ->
+                RouteScreen(
+                    route = current,
+                    settings = settings,
+                    navigate = navigate,
+                    persist = persist,
+                    padding = padding
+                )
+            }
+        }
+        NavigationBar(containerColor = Color.White) {
+            NavigationBarItem(
+                selected = selectedTab == BottomTab.HOME,
+                onClick = { onTabSelected(BottomTab.HOME) },
+                icon = { Icon(Icons.Default.Home, contentDescription = "首页") },
+                label = { Text("首页") }
+            )
+            NavigationBarItem(
+                selected = selectedTab == BottomTab.SETTINGS,
+                onClick = { onTabSelected(BottomTab.SETTINGS) },
+                icon = { Icon(Icons.Default.Settings, contentDescription = "设置") },
+                label = { Text("设置") }
+            )
         }
     }
 }
@@ -435,6 +474,7 @@ private fun RouteScreen(
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun HomeScreen(
     settings: AppSettings,
@@ -496,15 +536,39 @@ private fun HomeScreen(
                     }
                 }
             }
-            item { SectionLabel(settings.operationMode.title) }
-            if (settings.operationMode == OperationMode.SIMPLE) {
-                item { GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate) }
-                item { GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate) }
-                item { GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate) }
-            } else {
-                item {
-                    SettingRow(Icons.Default.Code, "摩斯电码设置", "${settings.morseBindings.size} 条指令") {
-                        navigate(Route.Morse)
+            item {
+                AnimatedContent(
+                    targetState = settings.operationMode,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(PageTransitionDurationMs)) +
+                            scaleIn(initialScale = 0.9f, animationSpec = tween(PageTransitionDurationMs)))
+                            .togetherWith(
+                                fadeOut(animationSpec = tween(PageTransitionDurationMs)) +
+                                    scaleOut(targetScale = 0.9f, animationSpec = tween(PageTransitionDurationMs))
+                            )
+                            .using(
+                                SizeTransform(
+                                    clip = false,
+                                    sizeAnimationSpec = { _, _ -> tween(PageTransitionDurationMs) }
+                                )
+                            )
+                    },
+                    label = "Operation mode content"
+                ) { mode ->
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        SectionLabel(mode.title)
+                        if (mode == OperationMode.SIMPLE) {
+                            GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate)
+                            GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate)
+                            GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate)
+                        } else {
+                            SettingRow(Icons.Default.Code, "摩斯电码设置", "${settings.morseBindings.size} 条指令") {
+                                navigate(Route.Morse)
+                            }
+                        }
                     }
                 }
             }
