@@ -27,5 +27,8 @@ data class AppSettings(
     val unknownMorseFeedbackEnabled: Boolean = false,
     val unknownMorseToastText: String = DEFAULT_UNKNOWN_MORSE_TOAST,
     val wakeScreenWhenOff: Boolean = false,
-    val cursorControlMode: CursorControlMode = CursorControlMode.DISABLED
+    val cursorControlMode: CursorControlMode = CursorControlMode.DISABLED,
+    val cursorLongPressAction: CursorLongPressAction = CursorLongPressAction.NONE,
+    val cursorLongPressMs: Long = DEFAULT_CURSOR_LONG_PRESS_MS,
+    val cursorRepeatIntervalMs: Long = DEFAULT_CURSOR_REPEAT_INTERVAL_MS
 )

@@ -2,7 +2,10 @@ package com.slimenull.customsidebuttonfunctions.xposed
 
 import android.view.KeyEvent
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
+import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.IXposedHookLoadPackage
@@ -28,6 +31,19 @@ class XposedEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
 /** Fallback for ROMs where the focused InputMethodService receives volume keys directly. */
 private object LegacyImeCursorHook {
     private var installed = false
+    private val lock = Any()
+    private var callbackHandler: Handler? = null
+    private data class Press(
+        val keyCode: Int,
+        val mode: CursorControlMode,
+        val action: CursorLongPressAction,
+        val repeatIntervalMs: Long,
+        val service: InputMethodService,
+        val handler: Handler,
+        var longRunnable: Runnable? = null,
+        var repeatRunnable: Runnable? = null
+    )
+    private val presses = mutableMapOf<Int, Press>()
 
     fun install() {
         if (installed) return
@@ -40,13 +56,16 @@ private object LegacyImeCursorHook {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val keyCode = param.args.getOrNull(0) as? Int ?: return
                         if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return
+                        val event = param.args.getOrNull(1) as? KeyEvent ?: return
                         val settings = SettingsReader.load()
                         val mode = settings.cursorControlMode
                         if (!settings.enabled) return
                         if (mode == CursorControlMode.DISABLED) return
                         val service = param.thisObject as? InputMethodService ?: return
                         if (!runCatching { service.isInputViewShown }.getOrDefault(false)) return
-                        service.sendDownUpKeyEvents(cursorKeyCode(keyCode, mode))
+                        if (event.repeatCount == 0) {
+                            startPress(keyCode, mode, settings, service)
+                        }
                         param.setResult(true)
                     }
                 }
@@ -58,12 +77,15 @@ private object LegacyImeCursorHook {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val keyCode = param.args.getOrNull(0) as? Int ?: return
                         if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return
+                        val handled = finishPress(keyCode)
                         val settings = SettingsReader.load()
                         val mode = settings.cursorControlMode
                         if (!settings.enabled) return
                         if (mode == CursorControlMode.DISABLED) return
                         val service = param.thisObject as? InputMethodService ?: return
-                        if (runCatching { service.isInputViewShown }.getOrDefault(false)) param.setResult(true)
+                        if (handled && runCatching { service.isInputViewShown }.getOrDefault(false)) {
+                            param.setResult(true)
+                        }
                     }
                 }
             )
@@ -80,6 +102,88 @@ private object LegacyImeCursorHook {
         } else {
             if (volumeUpMovesLeft) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         }
+    }
+
+    private fun startPress(
+        keyCode: Int,
+        mode: CursorControlMode,
+        settings: AppSettings,
+        service: InputMethodService
+    ) {
+        val handler = getCallbackHandler(service)
+        val press = Press(
+            keyCode = keyCode,
+            mode = mode,
+            action = settings.cursorLongPressAction,
+            repeatIntervalMs = settings.cursorRepeatIntervalMs,
+            service = service,
+            handler = handler
+        )
+        synchronized(lock) {
+            cancelPressLocked(keyCode)
+            presses[keyCode] = press
+            service.sendDownUpKeyEvents(cursorKeyCode(keyCode, mode))
+            val longRunnable = Runnable { triggerLongPress(press) }
+            press.longRunnable = longRunnable
+            press.handler.postDelayed(longRunnable, settings.cursorLongPressMs)
+        }
+    }
+
+    private fun triggerLongPress(press: Press) {
+        synchronized(lock) {
+            if (presses[press.keyCode] !== press) return
+            when (press.action) {
+                CursorLongPressAction.NONE -> Unit
+                CursorLongPressAction.REPEAT -> {
+                    val repeatRunnable = object : Runnable {
+                        override fun run() {
+                            synchronized(lock) {
+                                if (presses[press.keyCode] !== press) return
+                                press.service.sendDownUpKeyEvents(cursorKeyCode(press.keyCode, press.mode))
+                                press.handler.postDelayed(this, press.repeatIntervalMs)
+                            }
+                        }
+                    }
+                    press.repeatRunnable = repeatRunnable
+                    press.handler.postDelayed(repeatRunnable, press.repeatIntervalMs)
+                }
+                CursorLongPressAction.EDGE -> {
+                    press.service.sendDownUpKeyEvents(edgeKeyCode(press.keyCode, press.mode))
+                }
+            }
+        }
+    }
+
+    private fun finishPress(keyCode: Int): Boolean {
+        synchronized(lock) {
+            val press = presses.remove(keyCode) ?: return false
+            cancelPressLocked(press)
+            return true
+        }
+    }
+
+    private fun cancelPressLocked(keyCode: Int) {
+        presses.remove(keyCode)?.let(::cancelPressLocked)
+    }
+
+    private fun cancelPressLocked(press: Press) {
+        press.longRunnable?.let(press.handler::removeCallbacks)
+        press.repeatRunnable?.let(press.handler::removeCallbacks)
+    }
+
+    private fun getCallbackHandler(service: InputMethodService): Handler = synchronized(lock) {
+        callbackHandler ?: Handler(service.mainLooper).also {
+            callbackHandler = it
+        }
+    }
+
+    private fun edgeKeyCode(volumeKeyCode: Int, mode: CursorControlMode): Int {
+        val moveLeft = if (volumeKeyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            mode == CursorControlMode.VOLUME_UP_LEFT
+        } else {
+            mode == CursorControlMode.VOLUME_UP_RIGHT
+        }
+        return if (moveLeft) KeyEvent.KEYCODE_MOVE_HOME else KeyEvent.KEYCODE_MOVE_END
     }
 }
 

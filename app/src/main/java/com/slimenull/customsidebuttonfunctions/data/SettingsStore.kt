@@ -7,6 +7,13 @@ import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
+import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
+import com.slimenull.customsidebuttonfunctions.model.DEFAULT_CURSOR_LONG_PRESS_MS
+import com.slimenull.customsidebuttonfunctions.model.DEFAULT_CURSOR_REPEAT_INTERVAL_MS
+import com.slimenull.customsidebuttonfunctions.model.MAX_CURSOR_LONG_PRESS_MS
+import com.slimenull.customsidebuttonfunctions.model.MAX_CURSOR_REPEAT_INTERVAL_MS
+import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_LONG_PRESS_MS
+import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_REPEAT_INTERVAL_MS
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
@@ -39,6 +46,9 @@ object SettingsStore {
     private const val KEY_UNKNOWN_MORSE_TOAST_TEXT = "unknown_morse_toast_text"
     private const val KEY_WAKE_SCREEN = "wake_screen_when_off"
     private const val KEY_CURSOR_CONTROL_MODE = "cursor_control_mode"
+    private const val KEY_CURSOR_LONG_PRESS_ACTION = "cursor_long_press_action"
+    private const val KEY_CURSOR_LONG_PRESS_MS = "cursor_long_press_ms"
+    private const val KEY_CURSOR_REPEAT_INTERVAL_MS = "cursor_repeat_interval_ms"
 
     fun load(context: Context): AppSettings {
         val preferences = preferences(context)
@@ -96,6 +106,9 @@ object SettingsStore {
             .putString(KEY_UNKNOWN_MORSE_TOAST_TEXT, settings.unknownMorseToastText)
             .putBoolean(KEY_WAKE_SCREEN, settings.wakeScreenWhenOff)
             .putString(KEY_CURSOR_CONTROL_MODE, settings.cursorControlMode.name)
+            .putString(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
+            .putLong(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
+            .putLong(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
             // commit() ensures XSharedPreferences.reload() sees a just-saved gesture immediately.
             .commit()
     }
@@ -129,7 +142,14 @@ object SettingsStore {
         wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, false),
         cursorControlMode = preferences.getString(KEY_CURSOR_CONTROL_MODE, null)
             ?.let { runCatching { CursorControlMode.valueOf(it) }.getOrNull() }
-            ?: CursorControlMode.DISABLED
+            ?: CursorControlMode.DISABLED,
+        cursorLongPressAction = preferences.getString(KEY_CURSOR_LONG_PRESS_ACTION, null)
+            ?.let { runCatching { CursorLongPressAction.valueOf(it) }.getOrNull() }
+            ?: CursorLongPressAction.NONE,
+        cursorLongPressMs = preferences.getLong(KEY_CURSOR_LONG_PRESS_MS, DEFAULT_CURSOR_LONG_PRESS_MS)
+            .coerceIn(MIN_CURSOR_LONG_PRESS_MS, MAX_CURSOR_LONG_PRESS_MS),
+        cursorRepeatIntervalMs = preferences.getLong(KEY_CURSOR_REPEAT_INTERVAL_MS, DEFAULT_CURSOR_REPEAT_INTERVAL_MS)
+            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS)
     )
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =

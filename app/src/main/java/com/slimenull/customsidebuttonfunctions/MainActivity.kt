@@ -134,6 +134,11 @@ import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
+import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
+import com.slimenull.customsidebuttonfunctions.model.MAX_CURSOR_LONG_PRESS_MS
+import com.slimenull.customsidebuttonfunctions.model.MAX_CURSOR_REPEAT_INTERVAL_MS
+import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_LONG_PRESS_MS
+import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_REPEAT_INTERVAL_MS
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import kotlinx.coroutines.CancellationException
@@ -1064,12 +1069,127 @@ private fun OtherScreen(settings: AppSettings, persist: (AppSettings) -> Unit, p
                                 )
                             }
                         }
+                        HorizontalDivider(color = Color(0xFFEAF0F7))
+                        CursorLongPressPicker(settings.cursorLongPressAction) {
+                            persist(settings.copy(cursorLongPressAction = it))
+                        }
+                        if (settings.cursorLongPressAction != CursorLongPressAction.NONE) {
+                            HorizontalDivider(color = Color(0xFFEAF0F7))
+                            CursorTimingSetting(
+                                title = "长按判定延时",
+                                value = settings.cursorLongPressMs,
+                                minValue = MIN_CURSOR_LONG_PRESS_MS,
+                                maxValue = MAX_CURSOR_LONG_PRESS_MS,
+                                onChange = { persist(settings.copy(cursorLongPressMs = it)) }
+                            )
+                            if (settings.cursorLongPressAction == CursorLongPressAction.REPEAT) {
+                                HorizontalDivider(color = Color(0xFFEAF0F7))
+                                CursorTimingSetting(
+                                    title = "连续移动频率",
+                                    value = settings.cursorRepeatIntervalMs,
+                                    minValue = MIN_CURSOR_REPEAT_INTERVAL_MS,
+                                    maxValue = MAX_CURSOR_REPEAT_INTERVAL_MS,
+                                    suffix = "ms/次",
+                                    onChange = { persist(settings.copy(cursorRepeatIntervalMs = it)) }
+                                )
+                            }
+                        }
                     }
                 }
             }
             item {
                 InfoCard("设备亮屏、未锁屏、未通话且输入法窗口可见时接管音量键；隐藏输入法后恢复普通音量调节。")
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CursorLongPressPicker(
+    selected: CursorLongPressAction,
+    onSelect: (CursorLongPressAction) -> Unit
+) {
+    val view = LocalView.current
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { clickSound(view); expanded = it },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            Modifier.fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .background(Color(0xFFF3F7FC), RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("长按操作", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        selected.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(Icons.Default.ExpandMore, contentDescription = "选择长按操作", tint = AppMuted)
+            }
+        }
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            CursorLongPressAction.entries.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(action.title) },
+                    trailingIcon = if (action == selected) {
+                        { Icon(Icons.Default.CheckCircle, contentDescription = "已选择", tint = AppBlue) }
+                    } else null,
+                    onClick = {
+                        clickSound(view)
+                        expanded = false
+                        onSelect(action)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CursorTimingSetting(
+    title: String,
+    value: Long,
+    minValue: Long,
+    maxValue: Long,
+    suffix: String = "ms",
+    onChange: (Long) -> Unit
+) {
+    val view = LocalView.current
+    var sliderValue by remember(value) {
+        mutableFloatStateOf(value.coerceIn(minValue, maxValue).toFloat())
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Slider(
+                value = sliderValue,
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = {
+                    clickSound(view)
+                    onChange(sliderValue.toLong().coerceIn(minValue, maxValue))
+                },
+                valueRange = minValue.toFloat()..maxValue.toFloat(),
+                modifier = Modifier.weight(1f)
+            )
+            ValuePill("${sliderValue.toLong()} $suffix")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${minValue}ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+            Text("${maxValue}ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
         }
     }
 }

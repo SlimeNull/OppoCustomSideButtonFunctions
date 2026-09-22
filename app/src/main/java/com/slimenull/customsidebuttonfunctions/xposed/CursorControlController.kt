@@ -10,7 +10,9 @@ import android.telephony.TelephonyManager
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
+import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -40,8 +42,23 @@ internal class CursorControlController {
     private var volumeUpPressed = false
     private var volumeDownPressed = false
     private var cursorChordActive = false
-    private var volumeUpMode: CursorControlMode? = null
-    private var volumeDownMode: CursorControlMode? = null
+    private data class CursorPress(
+        val keyCode: Int,
+        val mode: CursorControlMode,
+        val longPressAction: CursorLongPressAction,
+        val longPressMs: Long,
+        val repeatIntervalMs: Long,
+        val downEvent: KeyEvent,
+        var handler: Handler? = null,
+        var initialCursorDownDispatched: Boolean = false,
+        var initialCursorReleased: Boolean = false,
+        var longTriggered: Boolean = false,
+        var longRunnable: Runnable? = null,
+        var repeatRunnable: Runnable? = null
+    )
+
+    private var volumeUpPress: CursorPress? = null
+    private var volumeDownPress: CursorPress? = null
     private var pendingCursorDown: KeyEvent? = null
     private var pendingCursorGeneration = 0
 
@@ -220,40 +237,57 @@ internal class CursorControlController {
         var pendingUpMode: CursorControlMode? = null
         var currentHandlingMode: CursorControlMode? = null
         var injectCurrent = false
+        var skipCurrentRelease = false
         synchronized(cursorLock) {
-            val handlingMode = modeForKeyLocked(keyCode)
+            val handlingPress = pressForKeyLocked(keyCode)
+            val handlingMode = handlingPress?.mode
             currentHandlingMode = handlingMode
             if (cursorChordActive) {
-                if (event.action == KeyEvent.ACTION_UP && handlingMode != null) setModeForKeyLocked(keyCode, null)
+                if (event.action == KeyEvent.ACTION_UP && handlingMode != null) cancelPressLocked(keyCode)
                 if (event.action == KeyEvent.ACTION_UP && !volumeUpPressed && !volumeDownPressed) cursorChordActive = false
                 return false
             }
 
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                val mode = currentMode()
+                val settings = SettingsReader.load()
+                val mode = currentMode(settings)
                 if (!isCursorControlAvailable(mode)) return false
-                setModeForKeyLocked(keyCode, mode)
+                setPressForKeyLocked(
+                    keyCode,
+                    CursorPress(
+                        keyCode = keyCode,
+                        mode = mode,
+                        longPressAction = settings.cursorLongPressAction,
+                        longPressMs = settings.cursorLongPressMs,
+                        repeatIntervalMs = settings.cursorRepeatIntervalMs,
+                        downEvent = KeyEvent(event)
+                    )
+                )
                 val handler = policyHandler ?: Handler(Looper.getMainLooper())
-                scheduleCursorDownLocked(event, handler)
+                scheduleCursorDownLocked(pressForKeyLocked(keyCode)!!, handler)
             } else if (handlingMode == null) {
                 return false
             } else if (event.action == KeyEvent.ACTION_DOWN) {
-                injectCurrent = true
+                // Physical repeat events are replaced by the configured long-press behavior.
             } else if (event.action == KeyEvent.ACTION_UP) {
                 pendingUp = takePendingCursorDownLocked(keyCode)
                 pendingUpMode = handlingMode
-                injectCurrent = true
-                setModeForKeyLocked(keyCode, null)
+                val initialDispatched = handlingPress?.initialCursorDownDispatched == true
+                skipCurrentRelease = handlingPress?.initialCursorReleased == true
+                cancelPressLocked(keyCode)
+                injectCurrent = pendingUp != null || (initialDispatched && !skipCurrentRelease)
                 if (!volumeUpPressed && !volumeDownPressed) cursorChordActive = false
             }
         }
-        if (pendingUp != null && pendingUpMode != null) injectCursorKeyEvent(pendingUp!!, pendingUpMode!!)
-        if (injectCurrent) injectCursorKeyEvent(event, currentHandlingMode ?: currentMode())
+        if (pendingUp != null && pendingUpMode != null) {
+            injectCursorPulse(pendingUp!!, pendingUpMode!!)
+        } else if (injectCurrent) {
+            injectCursorKeyEvent(event, currentHandlingMode ?: currentMode())
+        }
         return true
     }
 
-    private fun currentMode(): CursorControlMode {
-        val settings = SettingsReader.load()
+    private fun currentMode(settings: AppSettings = SettingsReader.load()): CursorControlMode {
         return if (settings.enabled) settings.cursorControlMode else CursorControlMode.DISABLED
     }
 
@@ -289,10 +323,15 @@ internal class CursorControlController {
         }
     }
 
-    private fun scheduleCursorDownLocked(event: KeyEvent, handler: Handler) {
+    private fun scheduleCursorDownLocked(press: CursorPress, handler: Handler) {
+        press.handler = handler
         val generation = ++pendingCursorGeneration
-        pendingCursorDown = KeyEvent(event)
+        pendingCursorDown = KeyEvent(press.downEvent)
         handler.postDelayed({ dispatchPendingCursorDown(generation) }, CURSOR_CHORD_DELAY_MS)
+
+        val longRunnable = Runnable { triggerLongPress(press, handler) }
+        press.longRunnable = longRunnable
+        handler.postDelayed(longRunnable, press.longPressMs)
     }
 
     private fun dispatchPendingCursorDown(generation: Int) {
@@ -300,12 +339,59 @@ internal class CursorControlController {
         val mode: CursorControlMode
         synchronized(cursorLock) {
             val pending = pendingCursorDown ?: return
-            mode = modeForKeyLocked(pending.keyCode) ?: return
+            val press = pressForKeyLocked(pending.keyCode) ?: return
+            mode = press.mode
             if (generation != pendingCursorGeneration || cursorChordActive) return
             event = pending
             pendingCursorDown = null
+            press.initialCursorDownDispatched = true
+            press.initialCursorReleased = true
         }
-        injectCursorKeyEvent(event, mode)
+        injectCursorPulse(event, mode)
+    }
+
+    private fun triggerLongPress(press: CursorPress, handler: Handler) {
+        var releaseInitial: KeyEvent? = null
+        var moveToEdge = false
+        synchronized(cursorLock) {
+            if (pressForKeyLocked(press.keyCode) !== press || press.longTriggered) return
+            if (pendingCursorDown?.downTime == press.downEvent.downTime) {
+                pendingCursorGeneration++
+                pendingCursorDown = null
+            }
+            press.longTriggered = true
+            if (press.initialCursorDownDispatched) {
+                press.initialCursorReleased = true
+                releaseInitial = press.downEvent
+            }
+            when (press.longPressAction) {
+                CursorLongPressAction.NONE -> Unit
+                CursorLongPressAction.REPEAT -> scheduleCursorRepeatLocked(press, handler)
+                CursorLongPressAction.EDGE -> moveToEdge = true
+            }
+        }
+        releaseInitial?.let { injectCursorKeyEvent(it, press.mode, KeyEvent.ACTION_UP, 0) }
+        if (moveToEdge) injectCursorEdge(press.downEvent, press.mode)
+    }
+
+    private fun scheduleCursorRepeatLocked(press: CursorPress, handler: Handler) {
+        val repeatRunnable = object : Runnable {
+            override fun run() {
+                val shouldRepeat = synchronized(cursorLock) {
+                    pressForKeyLocked(press.keyCode) === press && press.longTriggered &&
+                        press.longPressAction == CursorLongPressAction.REPEAT
+                }
+                if (!shouldRepeat) return
+                injectCursorPulse(press.downEvent, press.mode)
+                synchronized(cursorLock) {
+                    if (pressForKeyLocked(press.keyCode) === press && press.longTriggered) {
+                        handler.postDelayed(this, press.repeatIntervalMs)
+                    }
+                }
+            }
+        }
+        press.repeatRunnable = repeatRunnable
+        handler.postDelayed(repeatRunnable, press.repeatIntervalMs)
     }
 
     private fun takePendingCursorDownLocked(keyCode: Int): KeyEvent? {
@@ -317,14 +403,22 @@ internal class CursorControlController {
         val event = pendingCursorDown
         pendingCursorGeneration++
         pendingCursorDown = null
+        event?.let { cancelPressLocked(it.keyCode) }
         return event
     }
 
-    private fun modeForKeyLocked(keyCode: Int): CursorControlMode? =
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpMode else volumeDownMode
+    private fun pressForKeyLocked(keyCode: Int): CursorPress? =
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpPress else volumeDownPress
 
-    private fun setModeForKeyLocked(keyCode: Int, mode: CursorControlMode?) {
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpMode = mode else volumeDownMode = mode
+    private fun setPressForKeyLocked(keyCode: Int, press: CursorPress?) {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) volumeUpPress = press else volumeDownPress = press
+    }
+
+    private fun cancelPressLocked(keyCode: Int) {
+        val press = pressForKeyLocked(keyCode) ?: return
+        press.longRunnable?.let { press.handler?.removeCallbacks(it) }
+        press.repeatRunnable?.let { press.handler?.removeCallbacks(it) }
+        setPressForKeyLocked(keyCode, null)
     }
 
     private fun isReplayedVolumeEvent(event: KeyEvent): Boolean {
@@ -351,7 +445,28 @@ internal class CursorControlController {
         injectInputEvent(currentContext, replay, "replay volume key")
     }
 
-    private fun injectCursorKeyEvent(volumeEvent: KeyEvent, mode: CursorControlMode) {
+    private fun injectCursorPulse(volumeEvent: KeyEvent, mode: CursorControlMode) {
+        injectCursorKeyEvent(volumeEvent, mode, KeyEvent.ACTION_DOWN, 1)
+        injectCursorKeyEvent(volumeEvent, mode, KeyEvent.ACTION_UP, 1)
+    }
+
+    private fun injectCursorEdge(volumeEvent: KeyEvent, mode: CursorControlMode) {
+        val moveLeft = if (volumeEvent.keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            mode == CursorControlMode.VOLUME_UP_LEFT
+        } else {
+            mode == CursorControlMode.VOLUME_UP_RIGHT
+        }
+        val edgeCode = if (moveLeft) KeyEvent.KEYCODE_MOVE_HOME else KeyEvent.KEYCODE_MOVE_END
+        injectCursorKeyCode(volumeEvent, edgeCode, KeyEvent.ACTION_DOWN, 0, "cursor edge")
+        injectCursorKeyCode(volumeEvent, edgeCode, KeyEvent.ACTION_UP, 0, "cursor edge")
+    }
+
+    private fun injectCursorKeyEvent(
+        volumeEvent: KeyEvent,
+        mode: CursorControlMode,
+        action: Int = volumeEvent.action,
+        repeatCount: Int = volumeEvent.repeatCount
+    ) {
         if (mode == CursorControlMode.DISABLED) return
         val leftOnUp = mode == CursorControlMode.VOLUME_UP_LEFT
         val cursorCode = if (volumeEvent.keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
@@ -359,12 +474,22 @@ internal class CursorControlController {
         } else {
             if (leftOnUp) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         }
+        injectCursorKeyCode(volumeEvent, cursorCode, action, repeatCount, "cursor key")
+    }
+
+    private fun injectCursorKeyCode(
+        volumeEvent: KeyEvent,
+        cursorCode: Int,
+        action: Int,
+        repeatCount: Int,
+        description: String
+    ) {
         val cursorEvent = KeyEvent(
             volumeEvent.downTime,
             android.os.SystemClock.uptimeMillis(),
-            volumeEvent.action,
+            action,
             cursorCode,
-            volumeEvent.repeatCount,
+            repeatCount,
             volumeEvent.metaState,
             KeyCharacterMap.VIRTUAL_KEYBOARD,
             0,
@@ -375,7 +500,7 @@ internal class CursorControlController {
         injectInputEvent(
             context ?: resolveSystemContext()?.also { context = it } ?: return,
             cursorEvent,
-            "cursor key"
+            description
         )
     }
 
