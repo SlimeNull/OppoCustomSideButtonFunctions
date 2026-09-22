@@ -6,6 +6,7 @@ import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
@@ -37,6 +38,7 @@ object SettingsStore {
     private const val KEY_UNKNOWN_MORSE_FEEDBACK = "unknown_morse_feedback"
     private const val KEY_UNKNOWN_MORSE_TOAST_TEXT = "unknown_morse_toast_text"
     private const val KEY_WAKE_SCREEN = "wake_screen_when_off"
+    private const val KEY_CURSOR_CONTROL_MODE = "cursor_control_mode"
 
     fun load(context: Context): AppSettings {
         val preferences = preferences(context)
@@ -93,6 +95,7 @@ object SettingsStore {
             .putBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, settings.unknownMorseFeedbackEnabled)
             .putString(KEY_UNKNOWN_MORSE_TOAST_TEXT, settings.unknownMorseToastText)
             .putBoolean(KEY_WAKE_SCREEN, settings.wakeScreenWhenOff)
+            .putString(KEY_CURSOR_CONTROL_MODE, settings.cursorControlMode.name)
             // commit() ensures XSharedPreferences.reload() sees a just-saved gesture immediately.
             .commit()
     }
@@ -123,7 +126,10 @@ object SettingsStore {
         unknownMorseFeedbackEnabled = preferences.getBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, false),
         unknownMorseToastText = preferences.getString(KEY_UNKNOWN_MORSE_TOAST_TEXT, DEFAULT_UNKNOWN_MORSE_TOAST)
             ?: DEFAULT_UNKNOWN_MORSE_TOAST,
-        wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, false)
+        wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, false),
+        cursorControlMode = preferences.getString(KEY_CURSOR_CONTROL_MODE, null)
+            ?.let { runCatching { CursorControlMode.valueOf(it) }.getOrNull() }
+            ?: CursorControlMode.DISABLED
     )
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =

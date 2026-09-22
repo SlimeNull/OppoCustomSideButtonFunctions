@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.RemoveCircleOutline
@@ -132,6 +133,7 @@ import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
+import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import kotlinx.coroutines.CancellationException
@@ -186,7 +188,7 @@ private val AppColors = lightColorScheme(
     scrim = Color.Black
 )
 
-private enum class BottomTab { HOME, ABOUT }
+private enum class BottomTab { HOME, OTHER, ABOUT }
 
 private enum class GestureKind(val title: String, val subtitle: String) {
     SINGLE("单击", "按下并松开后立即触发"),
@@ -196,6 +198,7 @@ private enum class GestureKind(val title: String, val subtitle: String) {
 
 private sealed interface Route {
     data object Home : Route
+    data object Other : Route
     data object About : Route
     data object Morse : Route
     data object Feedback : Route
@@ -279,10 +282,14 @@ private fun CustomSideButtonApp() {
         }
     }
 
-    val primaryRoute: Route = if (route is Route.About) Route.About else Route.Home
+    val primaryRoute: Route = when (route) {
+        Route.Other -> Route.Other
+        Route.About -> Route.About
+        else -> Route.Home
+    }
 
     val animatedShade by animateFloatAsState(
-        targetValue = if (route is Route.Home || route is Route.About) 0f else PageShadeOpacity,
+        targetValue = if (isPrimaryRoute(route)) 0f else PageShadeOpacity,
         animationSpec = tween(PageTransitionDurationMs),
         label = "Page shade"
     )
@@ -303,7 +310,7 @@ private fun CustomSideButtonApp() {
     }
     val cornerDp = rememberScreenCornerRadius()
 
-    PredictiveBackHandler(enabled = route !is Route.Home && route !is Route.About) { progress ->
+    PredictiveBackHandler(enabled = !isPrimaryRoute(route)) { progress ->
         val destination = backDestination()
         try {
             predictiveTarget = destination
@@ -339,7 +346,13 @@ private fun CustomSideButtonApp() {
                     rootOffset = rootOffset,
                     onTabSelected = { tab ->
                         clickSound(view)
-                        navigate(if (tab == BottomTab.HOME) Route.Home else Route.About)
+                        navigate(
+                            when (tab) {
+                                BottomTab.HOME -> Route.Home
+                                BottomTab.OTHER -> Route.Other
+                                BottomTab.ABOUT -> Route.About
+                            }
+                        )
                     }
                 )
 
@@ -402,7 +415,11 @@ private fun PrimaryPageLayer(
     rootOffset: Float,
     onTabSelected: (BottomTab) -> Unit
 ) {
-    val selectedTab = if (primaryRoute == Route.About) BottomTab.ABOUT else BottomTab.HOME
+    val selectedTab = when (primaryRoute) {
+        Route.Other -> BottomTab.OTHER
+        Route.About -> BottomTab.ABOUT
+        else -> BottomTab.HOME
+    }
     Column(
         Modifier.fillMaxSize()
             .graphicsLayer { translationX = contentWidth * rootOffset }
@@ -413,7 +430,7 @@ private fun PrimaryPageLayer(
                 targetState = primaryRoute,
                 modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
-                    val direction = routeDirection(targetState)
+                    val direction = routeDirection(initialState, targetState)
                     (slideInHorizontally(tween(PageTransitionDurationMs)) { it * direction } togetherWith
                         slideOutHorizontally(tween(PageTransitionDurationMs)) { -it * direction })
                         .using(SizeTransform(clip = true))
@@ -437,6 +454,12 @@ private fun PrimaryPageLayer(
                 label = { Text("首页") }
             )
             NavigationBarItem(
+                selected = selectedTab == BottomTab.OTHER,
+                onClick = { onTabSelected(BottomTab.OTHER) },
+                icon = { Icon(Icons.Default.MoreHoriz, contentDescription = "其他") },
+                label = { Text("其他") }
+            )
+            NavigationBarItem(
                 selected = selectedTab == BottomTab.ABOUT,
                 onClick = { onTabSelected(BottomTab.ABOUT) },
                 icon = { Icon(Icons.Default.Info, contentDescription = "关于") },
@@ -448,9 +471,18 @@ private fun PrimaryPageLayer(
 
 private fun backDestination(): Route = Route.Home
 
-private fun isPrimaryRoute(route: Route): Boolean = route is Route.Home || route is Route.About
+private fun isPrimaryRoute(route: Route): Boolean =
+    route is Route.Home || route is Route.Other || route is Route.About
 
-private fun routeDirection(to: Route): Int = if (to == Route.Home) -1 else 1
+private fun routeDirection(from: Route, to: Route): Int =
+    if (primaryRouteIndex(to) >= primaryRouteIndex(from)) 1 else -1
+
+private fun primaryRouteIndex(route: Route): Int = when (route) {
+    Route.Home -> 0
+    Route.Other -> 1
+    Route.About -> 2
+    else -> 0
+}
 
 @Composable
 private fun RouteScreen(
@@ -462,6 +494,7 @@ private fun RouteScreen(
 ) {
     when (route) {
         Route.Home -> HomeScreen(settings, navigate, persist, padding)
+        Route.Other -> OtherScreen(settings, persist, padding)
         Route.About -> AboutScreen(padding)
         Route.Morse -> MorseScreen(settings, persist, { navigate(Route.Home) }, padding)
         Route.Feedback -> FeedbackScreen(settings, persist, { navigate(Route.Home) }, padding)
@@ -526,7 +559,7 @@ private fun HomeScreen(
                                 index, OperationMode.entries.size, baseShape = RoundedCornerShape(8.dp)
                             ),
                             colors = modeColors,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(if (index == 0) 2f else 3f),
                             label = { Text(mode.title) }
                         )
                     }
@@ -556,13 +589,17 @@ private fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         SectionLabel(mode.title)
-                        if (mode == OperationMode.SIMPLE) {
-                            GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate)
-                            GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate)
-                            GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate)
-                        } else {
-                            SettingRow(Icons.Default.Code, "摩斯电码设置", "${settings.morseBindings.size} 条指令") {
-                                navigate(Route.Morse)
+                        when (mode) {
+                            OperationMode.DISABLED -> Unit
+                            OperationMode.SIMPLE -> {
+                                GestureRow(GestureKind.SINGLE, settings.singleAction, settings.singleCustom, navigate)
+                                GestureRow(GestureKind.DOUBLE, settings.doubleAction, settings.doubleCustom, navigate)
+                                GestureRow(GestureKind.LONG, settings.longAction, settings.longCustom, navigate)
+                            }
+                            OperationMode.MORSE -> {
+                                SettingRow(Icons.Default.Code, "摩斯电码设置", "${settings.morseBindings.size} 条指令") {
+                                    navigate(Route.Morse)
+                                }
                             }
                         }
                     }
@@ -970,6 +1007,69 @@ private fun FeedbackScreen(settings: AppSettings, persist: (AppSettings) -> Unit
                 }
             }
           }
+        }
+    }
+}
+
+@Composable
+private fun OtherScreen(settings: AppSettings, persist: (AppSettings) -> Unit, padding: PaddingValues) {
+    val view = LocalView.current
+    Column(Modifier.fillMaxSize().padding(padding)) {
+        Text(
+            "其他",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item { SectionLabel("输入法光标") }
+            item {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("音量键控制光标", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        val cursorColors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = AppBlueSoft,
+                            activeContentColor = AppBlueDark,
+                            activeBorderColor = AppBlue,
+                            inactiveContainerColor = Color.White,
+                            inactiveContentColor = AppText,
+                            inactiveBorderColor = Color(0xFF9AAFC6)
+                        )
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            CursorControlMode.entries.forEachIndexed { index, mode ->
+                                SegmentedButton(
+                                    selected = settings.cursorControlMode == mode,
+                                    onClick = { clickSound(view); persist(settings.copy(cursorControlMode = mode)) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index, CursorControlMode.entries.size, baseShape = RoundedCornerShape(8.dp)
+                                    ),
+                                    colors = cursorColors,
+                                    modifier = Modifier.weight(
+                                        when (index) {
+                                            0 -> 2f
+                                            else -> 3f
+                                        }
+                                    ),
+                                    label = {
+                                        Text(
+                                            mode.title,
+                                            maxLines = 2,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                InfoCard("设备亮屏、未锁屏、未通话且输入法窗口可见时接管音量键；隐藏输入法后恢复普通音量调节。")
+            }
         }
     }
 }

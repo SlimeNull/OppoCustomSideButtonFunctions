@@ -26,5 +26,6 @@ data class AppSettings(
     val toastText: String = "侧键操作已执行",
     val unknownMorseFeedbackEnabled: Boolean = false,
     val unknownMorseToastText: String = DEFAULT_UNKNOWN_MORSE_TOAST,
-    val wakeScreenWhenOff: Boolean = false
+    val wakeScreenWhenOff: Boolean = false,
+    val cursorControlMode: CursorControlMode = CursorControlMode.DISABLED
 )

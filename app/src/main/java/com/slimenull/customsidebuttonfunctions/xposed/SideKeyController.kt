@@ -49,7 +49,7 @@ internal class SideKeyController {
 
     fun onDown(settings: AppSettings, executor: ActionExecutor, interactive: Boolean) {
         synchronized(lock) {
-            if (!settings.enabled || pressed) return
+            if (!settings.enabled || settings.operationMode == OperationMode.DISABLED || pressed) return
             if (settings.operationMode == OperationMode.MORSE) {
                 resetClickState()
                 longRunnable?.let(handler::removeCallbacks)
