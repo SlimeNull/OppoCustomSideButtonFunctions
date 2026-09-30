@@ -1437,6 +1437,11 @@ private fun CustomActionEditor(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                SettingSwitchRow(
+                    title = "显示执行结果 Toast",
+                    checked = custom.shellToastEnabled,
+                    onCheckedChange = { onChange(custom.copy(shellToastEnabled = it)) }
+                )
             }
         }
         ActionType.CUSTOM_ACTIVITY -> {
@@ -1465,6 +1470,11 @@ private fun CustomActionEditor(
                     label = { Text("Shell 指令") },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth()
+                )
+                SettingSwitchRow(
+                    title = "显示执行结果 Toast",
+                    checked = custom.shellToastEnabled,
+                    onCheckedChange = { onChange(custom.copy(shellToastEnabled = it)) }
                 )
             }
         }

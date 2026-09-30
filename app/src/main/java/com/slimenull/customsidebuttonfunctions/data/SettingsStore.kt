@@ -155,6 +155,7 @@ object SettingsStore {
             .putString("${prefix}url_scheme", custom.urlScheme)
             .putString("${prefix}xiaobu_shortcut_id", custom.xiaobuShortcutId)
             .putString("${prefix}shell_command", custom.shellCommand)
+            .putBoolean("${prefix}shell_toast_enabled", custom.shellToastEnabled)
     }
 
     private fun readCustom(preferences: SharedPreferences, prefix: String): CustomActionSettings {
@@ -168,7 +169,8 @@ object SettingsStore {
             activityAction = preferences.getString("${prefix}activity_action", "") ?: "",
             urlScheme = preferences.getString("${prefix}url_scheme", "") ?: "",
             xiaobuShortcutId = preferences.getString("${prefix}xiaobu_shortcut_id", "") ?: "",
-            shellCommand = preferences.getString("${prefix}shell_command", "") ?: ""
+            shellCommand = preferences.getString("${prefix}shell_command", "") ?: "",
+            shellToastEnabled = preferences.getBoolean("${prefix}shell_toast_enabled", true)
         )
     }
 
@@ -185,6 +187,7 @@ object SettingsStore {
                     put("url_scheme", binding.custom.urlScheme)
                     put("xiaobu_shortcut_id", binding.custom.xiaobuShortcutId)
                     put("shell_command", binding.custom.shellCommand)
+                    put("shell_toast_enabled", binding.custom.shellToastEnabled)
                 })
             })
         }
@@ -211,7 +214,8 @@ object SettingsStore {
                     activityAction = custom.optString("activity_action"),
                     urlScheme = custom.optString("url_scheme"),
                     xiaobuShortcutId = custom.optString("xiaobu_shortcut_id"),
-                    shellCommand = custom.optString("shell_command")
+                    shellCommand = custom.optString("shell_command"),
+                    shellToastEnabled = custom.optBoolean("shell_toast_enabled", true)
                 )
             )
         }.distinctBy { it.sequence }

@@ -243,11 +243,11 @@ internal object SideKeyModule {
                             XposedBridge.log("$TAG: side key down keyCode=${event.keyCode} scanCode=${event.scanCode} interactive=$interactive")
                             controller.onDown(settings, executor, interactive)
                             // Prevent ColorOS from launching its original shortcut as well.
-                            param.setResult(null)
+                            param.setResult(if ((param.method as java.lang.reflect.Method).returnType == Int::class.javaPrimitiveType) 0 else null)
                         } else if (event.action == KeyEvent.ACTION_UP && !down) {
                             XposedBridge.log("$TAG: side key up keyCode=${event.keyCode} scanCode=${event.scanCode} interactive=$interactive")
                             controller.onUp(settings, executor, interactive)
-                            param.setResult(null)
+                            param.setResult(if ((param.method as java.lang.reflect.Method).returnType == Int::class.javaPrimitiveType) 0 else null)
                         }
                     }
                 }

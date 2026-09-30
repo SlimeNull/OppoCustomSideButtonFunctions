@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <uses-feature
@@ -28,6 +29,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".RootCommandTrampolineActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:permission="android.permission.MANAGE_USERS"
+            android:theme="@style/Theme.RootCommandTrampoline" />
+        <service
+            android:name=".RootCommandService"
+            android:exported="false"
+            android:permission="android.permission.MANAGE_USERS"
+            android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".RootCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.MANAGE_USERS" />
         <meta-data
             android:name="xposedmodule"
             android:value="true" />

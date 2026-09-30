@@ -60,6 +60,7 @@ internal class ActionExecutor {
         settings: AppSettings,
         interactive: Boolean = true
     ) {
+        XposedBridge.log("CustomSideButtonFunctions: executing action=$action")
         val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
         runCatching {
             if (!interactive && settings.wakeScreenWhenOff) {
@@ -76,7 +77,7 @@ internal class ActionExecutor {
                 ActionType.XIAOBU_SHORTCUT -> executeXiaobuShortcut(currentContext, custom.xiaobuShortcutId)
                 ActionType.CUSTOM_ACTIVITY -> startCustomActivity(currentContext, custom)
                 ActionType.CUSTOM_URL -> openUrl(currentContext, custom.urlScheme)
-                ActionType.SHELL_COMMAND -> executeShell(custom.shellCommand)
+                ActionType.SHELL_COMMAND -> executeShell(custom.shellCommand, custom.shellToastEnabled)
                 ActionType.NONE -> return
             }
             feedback(currentContext, action, settings)
@@ -292,13 +293,14 @@ internal class ActionExecutor {
         )
     }
 
-    private fun executeShell(command: String, onFailure: (() -> Unit)? = null) {
+    private fun executeShell(command: String, showToast: Boolean = true, onFailure: (() -> Unit)? = null) {
         if (command.isBlank()) {
             XposedBridge.log("CustomSideButtonFunctions: shell command is empty")
             return
         }
         Thread {
-            if (!ShellCommandRunner.executeAsRoot(command)) onFailure?.invoke()
+            val currentContext = context ?: return@Thread
+            if (!ShellCommandRunner.executeAsRoot(currentContext, command, showToast)) onFailure?.invoke()
         }.apply {
             isDaemon = true
             name = "CustomSideButtonShell"

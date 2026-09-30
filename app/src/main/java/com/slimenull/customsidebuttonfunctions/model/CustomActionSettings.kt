@@ -7,5 +7,6 @@ data class CustomActionSettings(
     val activityAction: String = "",
     val urlScheme: String = "",
     val xiaobuShortcutId: String = "",
-    val shellCommand: String = ""
+    val shellCommand: String = "",
+    val shellToastEnabled: Boolean = true
 )
