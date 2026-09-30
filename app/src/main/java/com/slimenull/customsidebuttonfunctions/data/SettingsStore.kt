@@ -60,24 +60,16 @@ object SettingsStore {
         val devicePreferences = preferences(context)
         write(devicePreferences, settings)
 
-        // Keep a credential-protected copy for older Xposed builds that resolve the legacy path.
-        val legacyPreferences = runCatching {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE)
-        }.getOrElse {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        }
+        // LSPosed reads module preferences through the xposedsharedprefs bridge declared in the
+        // manifest. Keep the file private; MODE_WORLD_READABLE was deprecated and removed on
+        // recent Android releases.
+        val legacyPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         write(legacyPreferences, settings)
     }
 
-    private fun preferences(context: Context): SharedPreferences = runCatching {
-        context.createDeviceProtectedStorageContext()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE)
-    }.getOrElse {
-        // Android N+ may reject MODE_WORLD_READABLE; LSPosed can still reload this file
-        // through its privileged preference bridge in that case.
-        context.createDeviceProtectedStorageContext()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    private fun preferences(context: Context): SharedPreferences = context
+        .createDeviceProtectedStorageContext()
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun write(preferences: SharedPreferences, settings: AppSettings) {
         preferences.edit()

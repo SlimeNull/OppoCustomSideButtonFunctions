@@ -12,7 +12,6 @@ internal object SettingsReader {
     fun load(): AppSettings {
         val prefs = runCatching {
             (preferences ?: XSharedPreferences(PACKAGE, SettingsStore.PREFS_NAME).also { preferences = it }).apply {
-                makeWorldReadable()
                 reload()
             }
         }.getOrNull()
