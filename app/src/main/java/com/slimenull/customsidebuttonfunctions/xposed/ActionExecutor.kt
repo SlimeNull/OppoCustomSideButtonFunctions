@@ -3,6 +3,7 @@ package com.slimenull.customsidebuttonfunctions.xposed
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -270,11 +271,62 @@ internal class ActionExecutor {
     }
 
     private fun startFlashMemory() {
-        executeShell(
-            "am start-foreground-service -a oplus.gleanerservice.intent.action.COLLECT_DATA " +
-                "-n com.oplus.gleanerservice/.flashnotes.business.service.DataCollectService --ei triggerType 1"
-        )
+        val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
+        runCatching {
+            val intent = resolveFlashNotesIntent(currentContext)
+                ?: error("no compatible Flash Notes service found")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                currentContext.startForegroundService(intent)
+            } else {
+                currentContext.startService(intent)
+            }
+            XposedBridge.log("CustomSideButtonFunctions: triggered ColorOS Flash Notes service")
+        }.onFailure {
+            XposedBridge.log("CustomSideButtonFunctions: Flash Notes service failed: ${it.message}")
+        }
     }
+
+    /**
+     * Flash Notes moved packages/classes across ColorOS releases. Resolve the installed service
+     * instead of using a ColorOS version cutoff, since regional builds do not share exact versions.
+     */
+    private fun resolveFlashNotesIntent(context: Context): Intent? {
+        val candidates = listOf(
+            Candidate(
+                packageName = "com.oplus.gleanerservice",
+                className = "com.oplus.gleanerservice.flashnotes.business.service.DataCollectService",
+                action = "oplus.gleanerservice.intent.action.COLLECT_DATA"
+            ),
+            Candidate(
+                packageName = "com.coloros.colordirectservice",
+                className = "com.oplus.directservice.flashnotes.business.service.DataCollectService",
+                action = "coloros.colordirectservice.intent.action.COLLECT_DATA"
+            ),
+        )
+        val packageManager = context.packageManager
+        for (candidate in candidates) {
+            val component = ComponentName(candidate.packageName, candidate.className)
+            val serviceInfo = runCatching {
+                packageManager.getServiceInfo(component, PackageManager.MATCH_ALL)
+            }.getOrNull() ?: continue
+            if (!serviceInfo.enabled) continue
+            val intent = Intent(candidate.action)
+                .setComponent(component)
+                .putExtra("triggerType", 1)
+                .putExtra("longPressEventType", 0)
+            if (packageManager.resolveService(intent, PackageManager.MATCH_ALL) != null) {
+                XposedBridge.log("CustomSideButtonFunctions: resolved Flash Notes service $component")
+                return intent
+            }
+        }
+        return null
+    }
+
+    private data class Candidate(
+        val packageName: String,
+        val className: String,
+        val action: String
+    )
 
     private fun executeXiaobuShortcut(context: Context, shortcutId: String) {
         if (shortcutId.isBlank()) {
