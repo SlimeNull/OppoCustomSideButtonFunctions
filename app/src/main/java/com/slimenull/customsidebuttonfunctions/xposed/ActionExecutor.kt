@@ -23,6 +23,7 @@ import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.util.function.Consumer
@@ -67,6 +68,7 @@ internal class ActionExecutor {
             if (!interactive && settings.wakeScreenWhenOff) {
                 // Oplus' strategy exposes the same wakeup operation used by its stock shortcut.
                 runCatching { strategy?.let { XposedHelpers.callMethod(it, "wakeup") } }
+                    .onXposedFailure("wake screen")
             }
             when (action) {
                 ActionType.CYCLE_RINGER -> cycleRinger(currentContext)
@@ -82,7 +84,7 @@ internal class ActionExecutor {
                 ActionType.NONE -> return
             }
             feedback(currentContext, action, settings)
-        }.onFailure { XposedBridge.log("CustomSideButtonFunctions action failed: ${it.message}") }
+        }.onXposedFailure("execute action")
     }
 
     private fun resolveSystemContext(): Context? = runCatching {
@@ -91,7 +93,7 @@ internal class ActionExecutor {
         if (application != null) return@runCatching application
         val thread = threadClass.getMethod("currentActivityThread").invoke(null)
         threadClass.getMethod("getSystemContext").invoke(thread) as? Context
-    }.getOrNull()
+    }.onXposedFailure("resolve system context").getOrNull()
 
     private fun cycleRinger(context: Context) {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -119,7 +121,7 @@ internal class ActionExecutor {
                 }.toTypedArray()
                 internal.isAccessible = true
                 internal.invoke(audio, *args)
-            }.onSuccess { return }
+            }.onXposedFailure("set internal ringer mode").onSuccess { return }
         }
         audio.ringerMode = mode
     }
@@ -173,7 +175,7 @@ internal class ActionExecutor {
             }.toTypedArray()
             method.invoke(statusBar, *arguments)
             true
-        }.getOrDefault(false)
+        }.onXposedFailure("request screenshot through status bar").getOrDefault(false)
         if (!requested) {
             executeShell("service call color_screenshot 1") {
                 context.sendBroadcast(
@@ -217,9 +219,7 @@ internal class ActionExecutor {
         }
         XposedBridge.log("CustomSideButtonFunctions: screenshot requested through ScreenshotHelper")
         true
-    }.onFailure {
-        XposedBridge.log("CustomSideButtonFunctions: ScreenshotHelper unavailable: ${it.message}")
-    }.getOrDefault(false)
+    }.onXposedFailure("request screenshot through ScreenshotHelper").getOrDefault(false)
 
     private fun executeCommon(context: Context, action: CommonAction) {
         when (action) {
@@ -281,9 +281,7 @@ internal class ActionExecutor {
                 currentContext.startService(intent)
             }
             XposedBridge.log("CustomSideButtonFunctions: triggered ColorOS Flash Notes service")
-        }.onFailure {
-            XposedBridge.log("CustomSideButtonFunctions: Flash Notes service failed: ${it.message}")
-        }
+        }.onXposedFailure("start Flash Notes service")
     }
 
     /**
@@ -308,7 +306,7 @@ internal class ActionExecutor {
             val component = ComponentName(candidate.packageName, candidate.className)
             val serviceInfo = runCatching {
                 packageManager.getServiceInfo(component, PackageManager.MATCH_ALL)
-            }.getOrNull() ?: continue
+            }.onXposedFailure("resolve Flash Notes service $component").getOrNull() ?: continue
             if (!serviceInfo.enabled) continue
             val intent = Intent(candidate.action)
                 .setComponent(component)
@@ -377,7 +375,7 @@ internal class ActionExecutor {
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(10L)
             }
-        }.onFailure { XposedBridge.log("CustomSideButtonFunctions: vibration failed: ${it.message}") }
+        }.onXposedFailure("vibrate")
     }
 
     private fun showToast(context: Context, message: String) {

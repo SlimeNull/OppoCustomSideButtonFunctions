@@ -1314,7 +1314,7 @@ private fun openExternalUrl(context: Context, url: String) {
             Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 .addCategory(Intent.CATEGORY_BROWSABLE)
         )
-    }
+    }.onXposedFailure("open external URL")
 }
 
 @Composable

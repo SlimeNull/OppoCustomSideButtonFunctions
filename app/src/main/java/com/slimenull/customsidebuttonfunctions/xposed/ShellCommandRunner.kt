@@ -6,6 +6,7 @@ import android.content.ComponentName
 import com.slimenull.customsidebuttonfunctions.RootCommandTrampolineActivity
 import com.slimenull.customsidebuttonfunctions.RootCommandReceiver
 import com.slimenull.customsidebuttonfunctions.RootCommandService
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import de.robv.android.xposed.XposedBridge
 
 /** Runs in the process that handled the side key; never blocks its input thread. */
@@ -19,10 +20,7 @@ internal object ShellCommandRunner {
             context.sendBroadcast(appIntent(RootCommandReceiver::class.java, RootCommandReceiver.ACTION, command, showToast))
             XposedBridge.log("CustomSideButtonFunctions: dispatched root command to app receiver")
             true
-        }.getOrElse {
-            XposedBridge.log("CustomSideButtonFunctions: receiver dispatch failed: ${it.message}")
-            false
-        }
+        }.onXposedFailure("receiver dispatch").getOrDefault(false)
     }
 
     fun executeViaService(context: Context, command: String, showToast: Boolean = true): Boolean {
@@ -35,10 +33,7 @@ internal object ShellCommandRunner {
             }
             XposedBridge.log("CustomSideButtonFunctions: dispatched root command to app service")
             true
-        }.getOrElse {
-            XposedBridge.log("CustomSideButtonFunctions: service dispatch failed: ${it.message}")
-            false
-        }
+        }.onXposedFailure("service dispatch").getOrDefault(false)
     }
 
     fun executeViaActivity(context: Context, command: String, showToast: Boolean = true): Boolean {
@@ -52,10 +47,7 @@ internal object ShellCommandRunner {
             context.startActivity(intent)
             XposedBridge.log("CustomSideButtonFunctions: dispatched root command to app trampoline")
             true
-        }.getOrElse {
-            XposedBridge.log("CustomSideButtonFunctions: activity dispatch failed: ${it.message}")
-            false
-        }
+        }.onXposedFailure("activity dispatch").getOrDefault(false)
     }
 
     private fun appIntent(component: Class<*>, action: String, command: String, showToast: Boolean): Intent = Intent()

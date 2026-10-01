@@ -2,6 +2,7 @@ package com.slimenull.customsidebuttonfunctions.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
@@ -69,7 +70,7 @@ object SettingsStore {
 
     private fun preferences(context: Context): SharedPreferences = context
         .createDeviceProtectedStorageContext()
-        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE)
 
     private fun write(preferences: SharedPreferences, settings: AppSettings) {
         preferences.edit()
@@ -115,7 +116,8 @@ object SettingsStore {
         doubleAction = action(preferences.getString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
         longAction = action(preferences.getString(KEY_LONG_ACTION, null), ActionType.SCREENSHOT),
         operationMode = preferences.getString(KEY_OPERATION_MODE, null)
-            ?.let { runCatching { OperationMode.valueOf(it) }.getOrNull() } ?: OperationMode.SIMPLE,
+            ?.let { runCatching { OperationMode.valueOf(it) }.onXposedFailure("parse operation mode").getOrNull() }
+            ?: OperationMode.SIMPLE,
         morseLongPressMs = preferences.getLong(KEY_MORSE_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
         morseCommandWindowMs = preferences.getLong(KEY_MORSE_COMMAND_WINDOW_MS, 300L).coerceIn(100L, 800L),
         morsePressVibrationEnabled = preferences.getBoolean(KEY_MORSE_PRESS_VIBRATION, false),
@@ -133,10 +135,14 @@ object SettingsStore {
             ?: DEFAULT_UNKNOWN_MORSE_TOAST,
         wakeScreenWhenOff = preferences.getBoolean(KEY_WAKE_SCREEN, false),
         cursorControlMode = preferences.getString(KEY_CURSOR_CONTROL_MODE, null)
-            ?.let { runCatching { CursorControlMode.valueOf(it) }.getOrNull() }
+            ?.let { runCatching { CursorControlMode.valueOf(it) }.onXposedFailure("parse cursor control mode").getOrNull() }
             ?: CursorControlMode.DISABLED,
         cursorLongPressAction = preferences.getString(KEY_CURSOR_LONG_PRESS_ACTION, null)
-            ?.let { runCatching { CursorLongPressAction.valueOf(it) }.getOrNull() }
+            ?.let {
+                runCatching { CursorLongPressAction.valueOf(it) }
+                    .onXposedFailure("parse cursor long-press action")
+                    .getOrNull()
+            }
             ?: CursorLongPressAction.NONE,
         cursorLongPressMs = preferences.getLong(KEY_CURSOR_LONG_PRESS_MS, DEFAULT_CURSOR_LONG_PRESS_MS)
             .coerceIn(MIN_CURSOR_LONG_PRESS_MS, MAX_CURSOR_LONG_PRESS_MS),
@@ -145,7 +151,7 @@ object SettingsStore {
     )
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =
-        value?.let { runCatching { ActionType.valueOf(it) }.getOrNull() } ?: fallback
+        value?.let { runCatching { ActionType.valueOf(it) }.onXposedFailure("parse action").getOrNull() } ?: fallback
 
     private fun writeCustom(editor: SharedPreferences.Editor, prefix: String, custom: CustomActionSettings) {
         editor.putString("${prefix}common_action", custom.commonAction.name)
@@ -160,7 +166,7 @@ object SettingsStore {
 
     private fun readCustom(preferences: SharedPreferences, prefix: String): CustomActionSettings {
         val common = preferences.getString("${prefix}common_action", null)
-            ?.let { runCatching { CommonAction.valueOf(it) }.getOrNull() }
+            ?.let { runCatching { CommonAction.valueOf(it) }.onXposedFailure("parse common action").getOrNull() }
             ?: CommonAction.WECHAT_PAY
         return CustomActionSettings(
             commonAction = common,
@@ -194,15 +200,21 @@ object SettingsStore {
     }.toString()
 
     private fun readMorseBindings(value: String?): List<MorseBinding> {
-        val array = runCatching { JSONArray(value ?: "[]") }.getOrNull() ?: return emptyList()
+        val array = runCatching { JSONArray(value ?: "[]") }
+            .onXposedFailure("parse Morse bindings JSON")
+            .getOrNull() ?: return emptyList()
         return (0 until array.length()).mapNotNull { index ->
             val entry = array.optJSONObject(index) ?: return@mapNotNull null
             val sequence = entry.optString("sequence")
             if (sequence.isEmpty() || sequence.any { it != '0' && it != '1' }) return@mapNotNull null
-            val action = runCatching { ActionType.valueOf(entry.optString("action")) }.getOrNull()
+            val action = runCatching { ActionType.valueOf(entry.optString("action")) }
+                .onXposedFailure("parse Morse action")
+                .getOrNull()
                 ?.takeIf { it != ActionType.NONE } ?: return@mapNotNull null
             val custom = entry.optJSONObject("custom") ?: JSONObject()
-            val common = runCatching { CommonAction.valueOf(custom.optString("common_action")) }.getOrNull()
+            val common = runCatching { CommonAction.valueOf(custom.optString("common_action")) }
+                .onXposedFailure("parse Morse common action")
+                .getOrNull()
                 ?: CommonAction.WECHAT_PAY
             MorseBinding(
                 sequence = sequence,

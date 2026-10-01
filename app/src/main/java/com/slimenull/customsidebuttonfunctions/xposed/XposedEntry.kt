@@ -7,6 +7,7 @@ import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
@@ -62,7 +63,9 @@ private object LegacyImeCursorHook {
                         if (!settings.enabled) return
                         if (mode == CursorControlMode.DISABLED) return
                         val service = param.thisObject as? InputMethodService ?: return
-                        if (!runCatching { service.isInputViewShown }.getOrDefault(false)) return
+                        if (!runCatching { service.isInputViewShown }
+                                .onXposedFailure("read InputMethodService input view visibility")
+                                .getOrDefault(false)) return
                         if (event.repeatCount == 0) {
                             startPress(keyCode, mode, settings, service)
                         }
@@ -83,16 +86,16 @@ private object LegacyImeCursorHook {
                         if (!settings.enabled) return
                         if (mode == CursorControlMode.DISABLED) return
                         val service = param.thisObject as? InputMethodService ?: return
-                        if (handled && runCatching { service.isInputViewShown }.getOrDefault(false)) {
+                        if (handled && runCatching { service.isInputViewShown }
+                                .onXposedFailure("read InputMethodService input view visibility")
+                                .getOrDefault(false)) {
                             param.setResult(true)
                         }
                     }
                 }
             )
             XposedBridge.log("CustomSideButtonFunctions: installed InputMethodService cursor fallback")
-        }.onFailure {
-            XposedBridge.log("CustomSideButtonFunctions: InputMethodService cursor fallback unavailable: ${it.message}")
-        }
+        }.onXposedFailure("install InputMethodService cursor fallback")
     }
 
     private fun cursorKeyCode(volumeKeyCode: Int, mode: CursorControlMode): Int {
@@ -288,7 +291,7 @@ internal object SideKeyModule {
                             if (!SettingsReader.matches(event, settings)) return
                             val context = runCatching {
                                 XposedHelpers.getObjectField(param.thisObject, "mContext") as? android.content.Context
-                            }.getOrNull()
+                            }.onXposedFailure("read policy context").getOrNull()
                             executor.updateContext(context)
                             when (event.action) {
                                 KeyEvent.ACTION_DOWN -> controller.onDown(settings, executor, true)
@@ -310,8 +313,8 @@ internal object SideKeyModule {
 
     private fun resolveContext(instance: Any): android.content.Context? = runCatching {
         XposedHelpers.getObjectField(instance, "mContext") as? android.content.Context
-    }.getOrNull() ?: runCatching {
+    }.onXposedFailure("resolve hooked instance context").getOrNull() ?: runCatching {
         val activityThread = Class.forName("android.app.ActivityThread")
         activityThread.getMethod("currentApplication").invoke(null) as? android.content.Context
-    }.getOrNull()
+    }.onXposedFailure("resolve application context").getOrNull()
 }

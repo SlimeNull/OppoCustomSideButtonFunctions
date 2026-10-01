@@ -2,6 +2,7 @@ package com.slimenull.customsidebuttonfunctions.xposed
 
 import com.slimenull.customsidebuttonfunctions.data.SettingsStore
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import android.view.KeyEvent
 import de.robv.android.xposed.XSharedPreferences
 
@@ -14,7 +15,7 @@ internal object SettingsReader {
             (preferences ?: XSharedPreferences(PACKAGE, SettingsStore.PREFS_NAME).also { preferences = it }).apply {
                 reload()
             }
-        }.getOrNull()
+        }.onXposedFailure("load shared preferences").getOrNull()
         return prefs?.let(SettingsStore::fromPreferences) ?: AppSettings()
     }
 

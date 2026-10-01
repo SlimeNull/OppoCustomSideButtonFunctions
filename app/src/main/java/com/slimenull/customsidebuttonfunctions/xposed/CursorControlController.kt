@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
+import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -97,7 +98,7 @@ internal class CursorControlController {
                         }
                     )
                     true
-                }.getOrDefault(false)
+                }.onXposedFailure("hook $className volume-key cursor path").getOrDefault(false)
             ) {
                 XposedBridge.log("$TAG: hooked $className volume-key cursor path")
                 hookPolicyLifecycle(className, lpparam)
@@ -118,7 +119,7 @@ internal class CursorControlController {
                     capturePolicyServices(param.thisObject)
                 }
             })
-        }
+        }.onXposedFailure("hook $className policy lifecycle")
     }
 
     private fun hookImeVisibility(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -139,9 +140,7 @@ internal class CursorControlController {
                     imeWindowVisible = visibility and IME_VISIBLE != 0
                 }
             })
-        }.onFailure {
-            XposedBridge.log("$TAG: InputMethodManagerService visibility hook unavailable: ${it.message}")
-        }
+        }.onXposedFailure("hook InputMethodManagerService visibility")
     }
 
     private fun hookMediaVolumePaths(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -180,18 +179,16 @@ internal class CursorControlController {
             XposedBridge.hookAllMethods(clazz, methodName, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) = before(param)
             })
-        }.onFailure {
-            XposedBridge.log("$TAG: $className.$methodName hook unavailable: ${it.message}")
-        }
+        }.onXposedFailure("hook $className.$methodName")
     }
 
     private fun capturePolicyServices(policy: Any) {
         context = runCatching {
             XposedHelpers.getObjectField(policy, "mContext") as? Context
-        }.getOrNull() ?: context
+        }.onXposedFailure("read policy context").getOrNull() ?: context
         policyHandler = runCatching {
             XposedHelpers.getObjectField(policy, "mHandler") as? Handler
-        }.getOrNull() ?: policyHandler
+        }.onXposedFailure("read policy handler").getOrNull() ?: policyHandler
     }
 
     private fun trackCursorChord(event: KeyEvent): KeyEvent? {
@@ -297,7 +294,9 @@ internal class CursorControlController {
         val power = currentContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
         if (power != null && !power.isInteractive) return false
         val telephony = currentContext.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-        if (telephony != null && runCatching { telephony.callState }.getOrDefault(TelephonyManager.CALL_STATE_IDLE) != TelephonyManager.CALL_STATE_IDLE) return false
+        if (telephony != null && runCatching { telephony.callState }
+                .onXposedFailure("read telephony call state")
+                .getOrDefault(TelephonyManager.CALL_STATE_IDLE) != TelephonyManager.CALL_STATE_IDLE) return false
         val audio = currentContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         if (audio?.mode == AudioManager.MODE_IN_CALL || audio?.mode == AudioManager.MODE_IN_COMMUNICATION) return false
         val keyguard = currentContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -314,7 +313,7 @@ internal class CursorControlController {
             val visibility = XposedHelpers.callMethod(binding, "getImeWindowVis") as Int
             imeWindowVisible = visibility and IME_VISIBLE != 0
             imeWindowVisible
-        }.getOrElse {
+        }.onXposedFailure("read current IME visibility").getOrElse {
             if (!imeVisibilityReadErrorLogged) {
                 imeVisibilityReadErrorLogged = true
                 XposedBridge.log("$TAG: failed to read current IME visibility: ${it.message}")
@@ -511,18 +510,18 @@ internal class CursorControlController {
                 val thread = threadClass.getMethod("currentActivityThread").invoke(null)
                 threadClass.getMethod("getSystemContext").invoke(thread) as? Context
             }
-    }.getOrNull()
+    }.onXposedFailure("resolve system context").getOrNull()
 
     private fun copyDisplayId(target: KeyEvent, source: KeyEvent) {
         runCatching {
             XposedHelpers.callMethod(target, "setDisplayId", XposedHelpers.callMethod(source, "getDisplayId"))
-        }
+        }.onXposedFailure("copy display ID")
     }
 
     private fun injectInputEvent(currentContext: Context, event: KeyEvent, description: String) {
         runCatching {
             val inputManager = currentContext.getSystemService(Context.INPUT_SERVICE)
             XposedHelpers.callMethod(inputManager, "injectInputEvent", event, 0)
-        }.onFailure { XposedBridge.log("$TAG: failed to inject $description: ${it.message}") }
+        }.onXposedFailure("inject $description")
     }
 }
