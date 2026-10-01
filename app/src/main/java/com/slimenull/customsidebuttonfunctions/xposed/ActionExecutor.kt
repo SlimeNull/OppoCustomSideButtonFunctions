@@ -327,20 +327,18 @@ internal class ActionExecutor {
         // ColorOS owns the flashlight state in SystemUI. Its stock action binds this service and
         // sends the long-press command, which toggles the flashlight through FlashlightController
         // and updates ColorOS' animation/state integration.
-        if (toggleTorchThroughSystemUi(context)) return
+        val success = toggleTorchThroughSystemUi(context) || toggleTorchThroughDefault(context)
 
-        XposedBridge.log("try camera control toggle")
-        // Keep the CameraManager path for ROMs without an exposed vendor strategy (and for the
-        // generic PhoneWindowManager/raw-input fallbacks).
-        val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = camera.cameraIdList.firstOrNull { id ->
-            camera.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-        } ?: return
+        // update status
         torchEnabled = !torchEnabled
-        camera.setTorchMode(cameraId, torchEnabled)
     }
 
     private fun toggleTorchThroughSystemUi(context: Context): Boolean {
+        if (torchEnabled) {
+            // 当已经启用的时候, 就是通过系统 UI 切换了
+            return false
+        }
+
         XposedBridge.log("try system ui toggle")
 
         flashlightMessenger?.let { messenger ->
@@ -379,6 +377,20 @@ internal class ActionExecutor {
             return false
         }
         XposedBridge.log("CustomSideButtonFunctions: binding $FLASHLIGHT_SERVICE")
+        return true
+    }
+
+    private fun toggleTorchThroughDefault(context: Context): Boolean {
+
+        XposedBridge.log("try camera control toggle")
+        // Keep the CameraManager path for ROMs without an exposed vendor strategy (and for the
+        // generic PhoneWindowManager/raw-input fallbacks).
+        val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraId = camera.cameraIdList.firstOrNull { id ->
+            camera.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } ?: return false
+        val torchNewState = !torchEnabled
+        camera.setTorchMode(cameraId, torchNewState)
         return true
     }
 
