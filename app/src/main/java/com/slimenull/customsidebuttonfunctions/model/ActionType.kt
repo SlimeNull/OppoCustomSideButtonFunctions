@@ -7,6 +7,7 @@ enum class ActionType(val title: String, val description: String) {
     TOGGLE_DND("开启或关闭免打扰", "在开启和关闭之间切换"),
     CAMERA("打开相机", "启动系统默认相机"),
     FLASHLIGHT("切换手电筒", "打开或关闭摄像头手电筒"),
+    RECORDING("开始 / 结束录音", "调用 ColorOS 系统录音入口"),
     SCREENSHOT("系统截屏", "调用系统截屏服务"),
     COMMON_FUNCTION("常用功能", "微信、支付宝和 ColorOS 快捷功能"),
     XIAOBU_SHORTCUT("执行小布快捷指令", "通过小布快捷指令 ID 执行"),

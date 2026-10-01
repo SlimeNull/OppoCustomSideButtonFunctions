@@ -3,6 +3,7 @@ package com.slimenull.customsidebuttonfunctions.xposed
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -11,12 +12,18 @@ import android.media.AudioManager.RINGER_MODE_NORMAL
 import android.media.AudioManager.RINGER_MODE_SILENT
 import android.media.AudioManager.RINGER_MODE_VIBRATE
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.Process
+import android.os.UserHandle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.net.Uri
-import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
@@ -27,9 +34,47 @@ import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import java.util.function.Consumer
 
 internal class ActionExecutor {
+    private companion object {
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private const val FLASHLIGHT_SERVICE =
+            "com.oplus.systemui.statusbar.notification.keymagicservice.KeyFlashlightService"
+        private const val DND_SERVICE =
+            "com.oplus.systemui.statusbar.notification.keymagicservice.KeyDndService"
+        private const val SEEDLING_ACTION = "com.oplus.seedlingservice.action.SEEDLING_SERVICE"
+        private const val RECORDING_ACTION = "oplus.intent.action.START_RECORD_FROM_CUBE_BUTTON"
+        private val RECORDING_PACKAGES = listOf(
+            "com.coloros.soundrecorder",
+            "com.oneplus.soundrecorder"
+        )
+    }
+
     private var context: Context? = null
     private var strategy: Any? = null
     private var torchEnabled = false
+    private var flashlightMessenger: Messenger? = null
+    private var flashlightServiceConnection: ServiceConnection? = null
+    private var flashlightBindPending = false
+    private val flashlightReplyMessenger = Messenger(object : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(message: Message) {
+            XposedBridge.log("CustomSideButtonFunctions: flashlight service reply what=${message.what}")
+        }
+    })
+    private var dndMessenger: Messenger? = null
+    private var dndServiceConnection: ServiceConnection? = null
+    private var dndBindPending = false
+    private val dndReplyMessenger = Messenger(object : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(message: Message) {
+            XposedBridge.log("CustomSideButtonFunctions: DND service reply what=${message.what}")
+        }
+    })
+    private var ringMessenger: Messenger? = null
+    private var ringServiceConnection: ServiceConnection? = null
+    private var ringBindPending = false
+    private val ringReplyMessenger = Messenger(object : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(message: Message) {
+            XposedBridge.log("CustomSideButtonFunctions: ring-mode seedling reply what=${message.what}")
+        }
+    })
     private var screenshotHelper: Any? = null
     private var screenshotMethod: java.lang.reflect.Method? = null
 
@@ -73,6 +118,7 @@ internal class ActionExecutor {
                 ActionType.TOGGLE_DND -> toggleDnd(currentContext)
                 ActionType.CAMERA -> openCamera(currentContext)
                 ActionType.FLASHLIGHT -> toggleTorch(currentContext)
+                ActionType.RECORDING -> toggleRecording(currentContext)
                 ActionType.SCREENSHOT -> requestScreenshot(currentContext)
                 ActionType.COMMON_FUNCTION -> executeCommon(currentContext, custom.commonAction)
                 ActionType.XIAOBU_SHORTCUT -> executeXiaobuShortcut(currentContext, custom.xiaobuShortcutId)
@@ -95,13 +141,25 @@ internal class ActionExecutor {
 
     private fun cycleRinger(context: Context) {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val nextMode = when (audio.ringerMode) {
+        val nextMode = when (getRingerModeInternal(audio)) {
             RINGER_MODE_NORMAL -> RINGER_MODE_VIBRATE
             RINGER_MODE_VIBRATE -> RINGER_MODE_SILENT
             else -> RINGER_MODE_NORMAL
         }
+        // Match ActionKeyStartApp.w(): send the Seedling event and then update the same
+        // internal AudioManager state used by the stock action.
+        sendRingModeSeedling(context, nextMode)
         setRingerMode(audio, nextMode)
     }
+
+    /** ActionKeyStartApp reads the internal state before cycling; public ringerMode is fallback. */
+    private fun getRingerModeInternal(audio: AudioManager): Int = runCatching {
+        val method = audio.javaClass.methods.firstOrNull {
+            it.name == "getRingerModeInternal" && it.parameterTypes.isEmpty()
+        } ?: return@runCatching audio.ringerMode
+        method.isAccessible = true
+        (method.invoke(audio) as? Int) ?: audio.ringerMode
+    }.onXposedFailure("read internal ringer mode").getOrDefault(audio.ringerMode)
 
     private fun setRingerMode(audio: AudioManager, mode: Int) {
         val internal = audio.javaClass.methods.firstOrNull { method ->
@@ -125,6 +183,10 @@ internal class ActionExecutor {
     }
 
     private fun toggleDnd(context: Context) {
+        // ColorOS SystemUI owns ZenModeController and the associated fluid-cloud/UI effects.
+        if (toggleDndThroughSystemUi(context)) return
+
+        // Keep this framework path for ROMs without the Oplus service.
         val notification = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !notification.isNotificationPolicyAccessGranted) {
             showToast(context, "请先授予免打扰访问权限")
@@ -137,6 +199,97 @@ internal class ActionExecutor {
         )
     }
 
+    private fun toggleDndThroughSystemUi(context: Context): Boolean {
+        dndMessenger?.let { messenger -> return sendDndCommand(messenger) }
+        if (dndBindPending) return true
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                dndBindPending = false
+                val messenger = Messenger(service)
+                dndMessenger = messenger
+                XposedBridge.log("CustomSideButtonFunctions: connected to $name")
+                if (!sendDndCommand(messenger)) dndMessenger = null
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) {
+                dndMessenger = null
+                dndBindPending = false
+                XposedBridge.log("CustomSideButtonFunctions: disconnected from $name")
+            }
+        }
+        val intent = Intent().setComponent(ComponentName(SYSTEM_UI_PACKAGE, DND_SERVICE))
+        dndServiceConnection = connection
+        dndBindPending = true
+        val bound = runCatching {
+            context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }.onXposedFailure("bind DND service").getOrDefault(false)
+        if (!bound) {
+            dndServiceConnection = null
+            dndBindPending = false
+            return false
+        }
+        XposedBridge.log("CustomSideButtonFunctions: binding $DND_SERVICE")
+        return true
+    }
+
+    private fun sendDndCommand(messenger: Messenger): Boolean = runCatching {
+        val message = Message.obtain().apply {
+            what = 2 // KeyBaseService: handleActionButtonLongPress()
+            data = Bundle().apply { putString("key", "LONG_PRESS") }
+            replyTo = dndReplyMessenger
+        }
+        messenger.send(message)
+        XposedBridge.log("CustomSideButtonFunctions: sent DND long-press command")
+        true
+    }.onXposedFailure("send DND service command").getOrDefault(false)
+
+    private fun sendRingModeSeedling(context: Context, mode: Int): Boolean {
+        ringMessenger?.let { messenger -> return sendRingModeMessage(messenger, mode) }
+        if (ringBindPending) return true
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                ringBindPending = false
+                val messenger = Messenger(service)
+                ringMessenger = messenger
+                XposedBridge.log("CustomSideButtonFunctions: connected to $name")
+                if (!sendRingModeMessage(messenger, mode)) ringMessenger = null
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) {
+                ringMessenger = null
+                ringBindPending = false
+                XposedBridge.log("CustomSideButtonFunctions: disconnected from $name")
+            }
+        }
+        val intent = Intent(SEEDLING_ACTION).setPackage(SYSTEM_UI_PACKAGE)
+        ringServiceConnection = connection
+        ringBindPending = true
+        val bound = runCatching {
+            context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }.onXposedFailure("bind ring-mode seedling service").getOrDefault(false)
+        if (!bound) {
+            ringServiceConnection = null
+            ringBindPending = false
+            return false
+        }
+        XposedBridge.log("CustomSideButtonFunctions: binding ring-mode seedling service")
+        return true
+    }
+
+    private fun sendRingModeMessage(messenger: Messenger, mode: Int): Boolean = runCatching {
+        val message = Message.obtain().apply {
+            what = 1 // BaseService: seedling update
+            data = Bundle().apply {
+                putInt("ringModeType", mode)
+                putString("seedling_event", "ringModeEvent")
+            }
+            replyTo = ringReplyMessenger
+        }
+        messenger.send(message)
+        XposedBridge.log("CustomSideButtonFunctions: sent ring-mode seedling mode=$mode")
+        true
+    }.onXposedFailure("send ring-mode seedling command").getOrDefault(false)
+
     private fun openCamera(context: Context) {
         context.startActivity(
             Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
@@ -144,7 +297,41 @@ internal class ActionExecutor {
         )
     }
 
+    /** Uses the same ColorOS action-button entry that starts or finishes a recording. */
+    private fun toggleRecording(context: Context) {
+        val packageName = RECORDING_PACKAGES.firstOrNull { packageName ->
+            val intent = Intent(RECORDING_ACTION).setPackage(packageName)
+            context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+        }
+        if (packageName == null) {
+            XposedBridge.log("CustomSideButtonFunctions: ColorOS recorder activity is unavailable")
+            return
+        }
+        val intent = Intent(RECORDING_ACTION)
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val startedAsCurrentUser = runCatching {
+            XposedHelpers.callMethod(
+                context,
+                "startActivityAsUser",
+                intent,
+                UserHandle.getUserHandleForUid(Process.myUid())
+            )
+            true
+        }.onXposedFailure("start system recorder as current user").getOrDefault(false)
+        if (!startedAsCurrentUser) context.startActivity(intent)
+        XposedBridge.log("CustomSideButtonFunctions: triggered system recorder action package=$packageName")
+    }
+
     private fun toggleTorch(context: Context) {
+        // ColorOS owns the flashlight state in SystemUI. Its stock action binds this service and
+        // sends the long-press command, which toggles the flashlight through FlashlightController
+        // and updates ColorOS' animation/state integration.
+        if (toggleTorchThroughSystemUi(context)) return
+
+        XposedBridge.log("try camera control toggle")
+        // Keep the CameraManager path for ROMs without an exposed vendor strategy (and for the
+        // generic PhoneWindowManager/raw-input fallbacks).
         val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = camera.cameraIdList.firstOrNull { id ->
             camera.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
@@ -152,6 +339,61 @@ internal class ActionExecutor {
         torchEnabled = !torchEnabled
         camera.setTorchMode(cameraId, torchEnabled)
     }
+
+    private fun toggleTorchThroughSystemUi(context: Context): Boolean {
+        XposedBridge.log("try system ui toggle")
+
+        flashlightMessenger?.let { messenger ->
+            return sendFlashlightCommand(messenger)
+        }
+        if (flashlightBindPending) return true
+
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                flashlightBindPending = false
+                val messenger = Messenger(service)
+                flashlightMessenger = messenger
+                XposedBridge.log("CustomSideButtonFunctions: connected to $name")
+                if (!sendFlashlightCommand(messenger)) {
+                    flashlightMessenger = null
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) {
+                flashlightMessenger = null
+                flashlightBindPending = false
+                XposedBridge.log("CustomSideButtonFunctions: disconnected from $name")
+            }
+        }
+        val intent = Intent().setComponent(ComponentName(SYSTEM_UI_PACKAGE, FLASHLIGHT_SERVICE))
+        flashlightServiceConnection = connection
+        flashlightBindPending = true
+        val bound = runCatching {
+            context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }.onFailure {
+            XposedBridge.log("CustomSideButtonFunctions: cannot bind flashlight service: ${it.message}")
+        }.getOrDefault(false)
+        if (!bound) {
+            flashlightServiceConnection = null
+            flashlightBindPending = false
+            return false
+        }
+        XposedBridge.log("CustomSideButtonFunctions: binding $FLASHLIGHT_SERVICE")
+        return true
+    }
+
+    private fun sendFlashlightCommand(messenger: Messenger): Boolean = runCatching {
+        val message = Message.obtain().apply {
+            what = 2 // KeyBaseService: handleActionButtonLongPress()
+            data = Bundle().apply { putString("key", "LONG_PRESS") }
+            replyTo = flashlightReplyMessenger
+        }
+        messenger.send(message)
+        XposedBridge.log("CustomSideButtonFunctions: sent flashlight long-press command")
+        true
+    }.onFailure {
+        XposedBridge.log("CustomSideButtonFunctions: flashlight service command failed: ${it.message}")
+    }.getOrDefault(false)
 
     private fun requestScreenshot(context: Context) {
         if (requestScreenshotWithHelper(context)) return
