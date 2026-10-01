@@ -8,10 +8,6 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Copies a Xiaobu shortcut tag when the ColorOS shortcut editor opens one. */
@@ -20,7 +16,7 @@ internal object ShortcutsHook {
     private val installed = AtomicBoolean(false)
     private var context: Context? = null
 
-    fun install(lpparam: XC_LoadPackage.LoadPackageParam) {
+    fun install(lpparam: LoadPackageParam) {
         if (lpparam.packageName != PACKAGE || !installed.compareAndSet(false, true)) return
         runCatching {
             val mainActivity = XposedHelpers.findClass(

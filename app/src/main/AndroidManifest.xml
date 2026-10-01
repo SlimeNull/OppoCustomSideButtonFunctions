@@ -18,6 +18,7 @@
         android:enableOnBackInvokedCallback="true"
         android:icon="@drawable/ic_side_key"
         android:label="@string/app_name"
+        android:name=".CustomSideButtonApplication"
         android:supportsRtl="true"
         android:theme="@style/Theme.CustomSideButtonFunctions">
         <activity
@@ -45,20 +46,5 @@
             android:name=".RootCommandReceiver"
             android:exported="true"
             android:permission="android.permission.MANAGE_USERS" />
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
-        <meta-data
-            android:name="xposeddescription"
-            android:value="@string/xposed_description" />
-        <meta-data
-            android:name="xposedminversion"
-            android:value="82" />
-        <meta-data
-            android:name="xposedsharedprefs"
-            android:value="true" />
-        <meta-data
-            android:name="xposedscope"
-            android:resource="@array/xposed_scope" />
     </application>
 </manifest>

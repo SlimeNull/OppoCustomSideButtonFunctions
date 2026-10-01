@@ -14,10 +14,6 @@ import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 /**
  * Converts volume key events to DPAD events while a real IME window is visible.
@@ -63,14 +59,14 @@ internal class CursorControlController {
     private var pendingCursorDown: KeyEvent? = null
     private var pendingCursorGeneration = 0
 
-    fun install(lpparam: XC_LoadPackage.LoadPackageParam) {
+    fun install(lpparam: LoadPackageParam) {
         hookPolicy(lpparam)
         hookImeVisibility(lpparam)
         hookMediaVolumePaths(lpparam)
         XposedBridge.log("$TAG: installed volume-key cursor-control hooks")
     }
 
-    private fun hookPolicy(lpparam: XC_LoadPackage.LoadPackageParam) {
+    private fun hookPolicy(lpparam: LoadPackageParam) {
         val classNames = listOf(
             "com.android.server.policy.PhoneWindowManager",
             "com.android.server.policy.PhoneWindowManagerExt"
@@ -110,7 +106,7 @@ internal class CursorControlController {
 
     private fun hookPolicyLifecycle(
         className: String,
-        lpparam: XC_LoadPackage.LoadPackageParam
+        lpparam: LoadPackageParam
     ) {
         val policyClass = XposedHelpers.findClassIfExists(className, lpparam.classLoader) ?: return
         runCatching {
@@ -122,7 +118,7 @@ internal class CursorControlController {
         }.onXposedFailure("hook $className policy lifecycle")
     }
 
-    private fun hookImeVisibility(lpparam: XC_LoadPackage.LoadPackageParam) {
+    private fun hookImeVisibility(lpparam: LoadPackageParam) {
         val imeClass = XposedHelpers.findClassIfExists(
             "com.android.server.inputmethod.InputMethodManagerService",
             lpparam.classLoader
@@ -143,7 +139,7 @@ internal class CursorControlController {
         }.onXposedFailure("hook InputMethodManagerService visibility")
     }
 
-    private fun hookMediaVolumePaths(lpparam: XC_LoadPackage.LoadPackageParam) {
+    private fun hookMediaVolumePaths(lpparam: LoadPackageParam) {
         hookAllMethodsIfPresent(
             "android.media.session.MediaSessionLegacyHelper",
             lpparam.classLoader,

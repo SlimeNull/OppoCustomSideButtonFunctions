@@ -12,7 +12,7 @@ val signingProperties = Properties().apply {
 
 android {
     namespace = "com.slimenull.customsidebuttonfunctions"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.slimenull.customsidebuttonfunctions"
@@ -75,5 +75,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.8.0")
 
     // Xposed/LSPosed supplies these classes at runtime; they must not be packaged in the APK.
-    compileOnly("de.robv.android.xposed:api:82")
+    compileOnly("io.github.libxposed:api:102.0.0")
+    implementation("io.github.libxposed:service:102.0.0")
 }

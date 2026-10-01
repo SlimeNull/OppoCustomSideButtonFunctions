@@ -8,23 +8,30 @@ import com.slimenull.customsidebuttonfunctions.model.CursorControlMode
 import com.slimenull.customsidebuttonfunctions.model.CursorLongPressAction
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
-import de.robv.android.xposed.IXposedHookZygoteInit
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /** Xposed entry point for the framework key hook and shortcut editor. */
-class XposedEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
-    override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
-        LegacyImeCursorHook.install()
+class XposedEntry : XposedModule() {
+    override fun onModuleLoaded(param: ModuleLoadedParam) {
+        XposedRuntime.bind(this)
+        SettingsReader.bind(this)
     }
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        when (lpparam.packageName) {
-            "android" -> SideKeyModule.install(lpparam)
-            "com.coloros.shortcuts" -> ShortcutsHook.install(lpparam)
+    override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        XposedRuntime.bind(this)
+        SettingsReader.bind(this)
+        LegacyImeCursorHook.install()
+        SideKeyModule.install(LoadPackageParam("android", param.classLoader))
+    }
+
+    override fun onPackageLoaded(param: PackageLoadedParam) {
+        if (param.packageName == "com.coloros.shortcuts") {
+            XposedRuntime.bind(this)
+            SettingsReader.bind(this)
+            ShortcutsHook.install(LoadPackageParam(param.packageName, param.defaultClassLoader))
         }
     }
 }
@@ -194,7 +201,7 @@ internal object SideKeyModule {
     private const val TAG = "CustomSideButtonFunctions"
     private var installed = false
 
-    fun install(lpparam: XC_LoadPackage.LoadPackageParam) {
+    fun install(lpparam: LoadPackageParam) {
         if (installed) return
         installed = true
 
@@ -211,7 +218,7 @@ internal object SideKeyModule {
     }
 
     private fun installOplusStrategyHook(
-        lpparam: XC_LoadPackage.LoadPackageParam,
+        lpparam: LoadPackageParam,
         controller: SideKeyController,
         executor: ActionExecutor
     ): Boolean {
@@ -264,7 +271,7 @@ internal object SideKeyModule {
     }
 
     private fun installPhoneWindowHook(
-        lpparam: XC_LoadPackage.LoadPackageParam,
+        lpparam: LoadPackageParam,
         controller: SideKeyController,
         executor: ActionExecutor
     ): Boolean {

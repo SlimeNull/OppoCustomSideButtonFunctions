@@ -1,7 +1,7 @@
 package com.slimenull.customsidebuttonfunctions
 
 import android.util.Log
-import de.robv.android.xposed.XposedBridge
+import com.slimenull.customsidebuttonfunctions.xposed.XposedBridge
 
 private const val TAG = "CustomSideButtonFunctions"
 

@@ -276,7 +276,7 @@ private fun CustomSideButtonApp() {
 
     fun persist(next: AppSettings) {
         settings = next
-        SettingsStore.save(context, next)
+        SettingsStore.save(next)
     }
 
     fun navigate(next: Route) {

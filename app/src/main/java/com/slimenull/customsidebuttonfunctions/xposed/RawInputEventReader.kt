@@ -7,7 +7,6 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
-import de.robv.android.xposed.XposedBridge
 
 /** Fallback parser for devices where the policy hook does not expose the vendor key. */
 internal object RawInputEventReader {

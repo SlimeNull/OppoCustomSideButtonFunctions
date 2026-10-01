@@ -7,7 +7,6 @@ import com.slimenull.customsidebuttonfunctions.RootCommandTrampolineActivity
 import com.slimenull.customsidebuttonfunctions.RootCommandReceiver
 import com.slimenull.customsidebuttonfunctions.RootCommandService
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
-import de.robv.android.xposed.XposedBridge
 
 /** Runs in the process that handled the side key; never blocks its input thread. */
 internal object ShellCommandRunner {

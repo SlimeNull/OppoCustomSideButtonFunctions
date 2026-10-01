@@ -4,17 +4,18 @@ import com.slimenull.customsidebuttonfunctions.data.SettingsStore
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import android.view.KeyEvent
-import de.robv.android.xposed.XSharedPreferences
+import io.github.libxposed.api.XposedInterface
 
 internal object SettingsReader {
-    private const val PACKAGE = "com.slimenull.customsidebuttonfunctions"
-    private var preferences: XSharedPreferences? = null
+    private var api: XposedInterface? = null
+
+    fun bind(value: XposedInterface) {
+        api = value
+    }
 
     fun load(): AppSettings {
         val prefs = runCatching {
-            (preferences ?: XSharedPreferences(PACKAGE, SettingsStore.PREFS_NAME).also { preferences = it }).apply {
-                reload()
-            }
+            api?.getRemotePreferences(SettingsStore.PREFS_NAME)
         }.onXposedFailure("load shared preferences").getOrNull()
         return prefs?.let(SettingsStore::fromPreferences) ?: AppSettings()
     }

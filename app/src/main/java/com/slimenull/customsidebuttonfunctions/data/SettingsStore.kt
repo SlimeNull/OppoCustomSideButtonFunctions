@@ -3,6 +3,7 @@ package com.slimenull.customsidebuttonfunctions.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
+import com.slimenull.customsidebuttonfunctions.xposed.XposedBridge
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
@@ -18,12 +19,22 @@ import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_REPEAT_INTERVAL_
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
+import io.github.libxposed.service.XposedService
+import io.github.libxposed.service.XposedServiceHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A deliberately simple preference format so XSharedPreferences can consume it from system_server. */
+/** A deliberately simple preference format so LSPosed remote preferences can consume it from system_server. */
 object SettingsStore {
     const val PREFS_NAME = "settings"
+
+    @Volatile
+    private var remoteService: XposedService? = null
+    @Volatile
+    private var pendingRemoteSettings: AppSettings? = null
+    @Volatile
+    private var applicationContext: Context? = null
+    private var remoteBridgeInitialized = false
 
     private const val KEY_ENABLED = "enabled"
     private const val KEY_KEY_CODE = "key_code"
@@ -51,29 +62,65 @@ object SettingsStore {
     private const val KEY_CURSOR_LONG_PRESS_MS = "cursor_long_press_ms"
     private const val KEY_CURSOR_REPEAT_INTERVAL_MS = "cursor_repeat_interval_ms"
 
+    @Synchronized
+    fun initializeRemotePreferences(context: Context? = null) {
+        context?.let { applicationContext = it.applicationContext }
+        if (remoteBridgeInitialized) return
+        remoteBridgeInitialized = true
+        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
+            override fun onServiceBind(service: XposedService) {
+                remoteService = service
+                val pending = pendingRemoteSettings ?: migrateLocalSettingsIfRemoteIsEmpty(service) ?: return
+                if (writeRemote(service, pending)) pendingRemoteSettings = null
+            }
+
+            override fun onServiceDied(service: XposedService) {
+                if (remoteService === service) remoteService = null
+            }
+        })
+    }
+
     fun load(context: Context): AppSettings {
-        val preferences = preferences(context)
+        initializeRemotePreferences(context)
+        val preferences = remotePreferences() ?: preferences(context)
         return fromPreferences(preferences)
     }
 
-    fun save(context: Context, settings: AppSettings) {
-        // Device-protected storage lets a system_server hook read settings before first unlock.
-        val devicePreferences = preferences(context)
-        write(devicePreferences, settings)
-
-        // LSPosed reads module preferences through the xposedsharedprefs bridge declared in the
-        // manifest. Keep the file private; MODE_WORLD_READABLE was deprecated and removed on
-        // recent Android releases.
-        val legacyPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        write(legacyPreferences, settings)
+    fun save(settings: AppSettings) {
+        initializeRemotePreferences()
+        if (!writeRemote(settings)) pendingRemoteSettings = settings
     }
+
+    private fun migrateLocalSettingsIfRemoteIsEmpty(service: XposedService): AppSettings? {
+        val context = applicationContext ?: return null
+        return try {
+            val remote = service.getRemotePreferences(PREFS_NAME)
+            if (remote.all.isEmpty()) fromPreferences(preferences(context)) else null
+        } catch (error: Throwable) {
+            XposedBridge.log("CustomSideButtonFunctions: migrate local preferences failed: ${error.message}")
+            XposedBridge.log(error)
+            null
+        }
+    }
+
+    private fun remotePreferences(): SharedPreferences? = remoteService?.let { service ->
+        runCatching { service.getRemotePreferences(PREFS_NAME) }
+            .onXposedFailure("load remote preferences")
+            .getOrNull()
+    }
+
+    private fun writeRemote(settings: AppSettings): Boolean = remoteService?.let { writeRemote(it, settings) } == true
+
+    private fun writeRemote(service: XposedService, settings: AppSettings): Boolean = runCatching {
+        write(service.getRemotePreferences(PREFS_NAME), settings)
+    }.onXposedFailure("save remote preferences").getOrDefault(false)
 
     private fun preferences(context: Context): SharedPreferences = context
         .createDeviceProtectedStorageContext()
-        .getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE)
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private fun write(preferences: SharedPreferences, settings: AppSettings) {
-        preferences.edit()
+    private fun write(preferences: SharedPreferences, settings: AppSettings): Boolean {
+        return preferences.edit()
             .putBoolean(KEY_ENABLED, settings.enabled)
             .putInt(KEY_KEY_CODE, settings.keyCode)
             .putString(KEY_INPUT_PATH, settings.inputDevicePath)
@@ -102,7 +149,7 @@ object SettingsStore {
             .putString(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
             .putLong(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
             .putLong(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
-            // commit() ensures XSharedPreferences.reload() sees a just-saved gesture immediately.
+            // commit() ensures the remote preference bridge sees a just-saved gesture immediately.
             .commit()
     }
 

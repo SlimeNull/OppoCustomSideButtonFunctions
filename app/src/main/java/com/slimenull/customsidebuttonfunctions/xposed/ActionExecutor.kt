@@ -24,8 +24,6 @@ import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
 import java.util.function.Consumer
 
 internal class ActionExecutor {
