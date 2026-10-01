@@ -18,6 +18,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import android.os.Process
+import android.os.UserHandle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.net.Uri
@@ -36,6 +38,11 @@ internal class ActionExecutor {
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
         private const val FLASHLIGHT_SERVICE =
             "com.oplus.systemui.statusbar.notification.keymagicservice.KeyFlashlightService"
+        private const val RECORDING_ACTION = "oplus.intent.action.START_RECORD_FROM_CUBE_BUTTON"
+        private val RECORDING_PACKAGES = listOf(
+            "com.coloros.soundrecorder",
+            "com.oneplus.soundrecorder"
+        )
     }
 
     private var context: Context? = null
@@ -92,6 +99,7 @@ internal class ActionExecutor {
                 ActionType.TOGGLE_DND -> toggleDnd(currentContext)
                 ActionType.CAMERA -> openCamera(currentContext)
                 ActionType.FLASHLIGHT -> toggleTorch(currentContext)
+                ActionType.RECORDING -> toggleRecording(currentContext)
                 ActionType.SCREENSHOT -> requestScreenshot(currentContext)
                 ActionType.COMMON_FUNCTION -> executeCommon(currentContext, custom.commonAction)
                 ActionType.XIAOBU_SHORTCUT -> executeXiaobuShortcut(currentContext, custom.xiaobuShortcutId)
@@ -161,6 +169,32 @@ internal class ActionExecutor {
             Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
+    }
+
+    /** Uses the same ColorOS action-button entry that starts or finishes a recording. */
+    private fun toggleRecording(context: Context) {
+        val packageName = RECORDING_PACKAGES.firstOrNull { packageName ->
+            val intent = Intent(RECORDING_ACTION).setPackage(packageName)
+            context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+        }
+        if (packageName == null) {
+            XposedBridge.log("CustomSideButtonFunctions: ColorOS recorder activity is unavailable")
+            return
+        }
+        val intent = Intent(RECORDING_ACTION)
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val startedAsCurrentUser = runCatching {
+            XposedHelpers.callMethod(
+                context,
+                "startActivityAsUser",
+                intent,
+                UserHandle.getUserHandleForUid(Process.myUid())
+            )
+            true
+        }.onXposedFailure("start system recorder as current user").getOrDefault(false)
+        if (!startedAsCurrentUser) context.startActivity(intent)
+        XposedBridge.log("CustomSideButtonFunctions: triggered system recorder action package=$packageName")
     }
 
     private fun toggleTorch(context: Context) {

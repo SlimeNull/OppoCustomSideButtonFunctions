@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.RemoveCircleOutline
@@ -1583,6 +1584,7 @@ private fun actionIcon(action: ActionType): ImageVector = when (action) {
     ActionType.TOGGLE_DND -> Icons.Default.NotificationsOff
     ActionType.CAMERA -> Icons.Default.CameraAlt
     ActionType.FLASHLIGHT -> Icons.Default.FlashOn
+    ActionType.RECORDING -> Icons.Default.Mic
     ActionType.SCREENSHOT -> Icons.Default.CropFree
     ActionType.COMMON_FUNCTION -> Icons.Default.Tune
     ActionType.XIAOBU_SHORTCUT -> Icons.Default.Tune
