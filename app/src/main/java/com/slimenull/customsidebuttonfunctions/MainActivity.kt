@@ -80,6 +80,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -192,6 +193,22 @@ private val AppColors = lightColorScheme(
     errorContainer = Color(0xFFFDE8E8),
     onErrorContainer = Color(0xFF6D1C22),
     scrim = Color.Black
+)
+
+private data class ActivityPreset(
+    val title: String,
+    val packageName: String,
+    val className: String,
+    val action: String = "",
+    val launchInSmallWindow: Boolean = true
+)
+
+private val activityPresets = listOf(
+    ActivityPreset(
+        title = "便签速记",
+        packageName = "com.coloros.note",
+        className = "com.nearme.note.activity.richedit.QuickNoteViewRichEditActivity"
+    )
 )
 
 private enum class BottomTab { HOME, OTHER, ABOUT }
@@ -1418,6 +1435,37 @@ private fun ActionPicker(
 }
 
 @Composable
+private fun ActivityPresetPicker(onSelect: (ActivityPreset) -> Unit) {
+    val view = LocalView.current
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { clickSound(view); expanded = !expanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("载入预设", modifier = Modifier.weight(1f))
+            Icon(Icons.Default.ExpandMore, contentDescription = "选择预设")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            activityPresets.forEach { preset ->
+                DropdownMenuItem(
+                    text = { Text(preset.title) },
+                    onClick = {
+                        clickSound(view)
+                        expanded = false
+                        onSelect(preset)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun CustomActionEditor(
     action: ActionType,
     custom: CustomActionSettings,
@@ -1455,6 +1503,16 @@ private fun CustomActionEditor(
                     checked = custom.launchInSmallWindow,
                     onCheckedChange = { onChange(custom.copy(launchInSmallWindow = it)) }
                 )
+                ActivityPresetPicker { preset ->
+                    onChange(
+                        custom.copy(
+                            activityPackage = preset.packageName,
+                            activityClass = preset.className,
+                            activityAction = preset.action,
+                            launchInSmallWindow = preset.launchInSmallWindow
+                        )
+                    )
+                }
             }
         }
         ActionType.CUSTOM_URL -> {
