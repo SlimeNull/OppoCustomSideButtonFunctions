@@ -205,6 +205,7 @@ object SettingsStore {
             .putString("${prefix}activity_package", custom.activityPackage)
             .putString("${prefix}activity_class", custom.activityClass)
             .putString("${prefix}activity_action", custom.activityAction)
+            .putBoolean("${prefix}activity_small_window", custom.launchInSmallWindow)
             .putString("${prefix}url_scheme", custom.urlScheme)
             .putString("${prefix}xiaobu_shortcut_id", custom.xiaobuShortcutId)
             .putString("${prefix}shell_command", custom.shellCommand)
@@ -220,6 +221,7 @@ object SettingsStore {
             activityPackage = preferences.getString("${prefix}activity_package", "") ?: "",
             activityClass = preferences.getString("${prefix}activity_class", "") ?: "",
             activityAction = preferences.getString("${prefix}activity_action", "") ?: "",
+            launchInSmallWindow = preferences.getBoolean("${prefix}activity_small_window", false),
             urlScheme = preferences.getString("${prefix}url_scheme", "") ?: "",
             xiaobuShortcutId = preferences.getString("${prefix}xiaobu_shortcut_id", "") ?: "",
             shellCommand = preferences.getString("${prefix}shell_command", "") ?: "",
@@ -237,6 +239,7 @@ object SettingsStore {
                     put("activity_package", binding.custom.activityPackage)
                     put("activity_class", binding.custom.activityClass)
                     put("activity_action", binding.custom.activityAction)
+                    put("activity_small_window", binding.custom.launchInSmallWindow)
                     put("url_scheme", binding.custom.urlScheme)
                     put("xiaobu_shortcut_id", binding.custom.xiaobuShortcutId)
                     put("shell_command", binding.custom.shellCommand)
@@ -271,6 +274,7 @@ object SettingsStore {
                     activityPackage = custom.optString("activity_package"),
                     activityClass = custom.optString("activity_class"),
                     activityAction = custom.optString("activity_action"),
+                    launchInSmallWindow = custom.optBoolean("activity_small_window", false),
                     urlScheme = custom.optString("url_scheme"),
                     xiaobuShortcutId = custom.optString("xiaobu_shortcut_id"),
                     shellCommand = custom.optString("shell_command"),

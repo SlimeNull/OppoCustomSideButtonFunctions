@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.app.ActivityOptions
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -42,6 +43,7 @@ internal class ActionExecutor {
             "com.oplus.systemui.statusbar.notification.keymagicservice.KeyDndService"
         private const val SEEDLING_ACTION = "com.oplus.seedlingservice.action.SEEDLING_SERVICE"
         private const val RECORDING_ACTION = "oplus.intent.action.START_RECORD_FROM_CUBE_BUTTON"
+        private const val SMALL_WINDOW_MODE = 100
         private val RECORDING_PACKAGES = listOf(
             "com.coloros.soundrecorder",
             "com.oneplus.soundrecorder"
@@ -495,10 +497,27 @@ internal class ActionExecutor {
         context.startActivity(intent)
     }
 
-    private fun startActivity(context: Context, packageName: String, className: String, action: String) {
+    private fun startActivity(
+        context: Context,
+        packageName: String,
+        className: String,
+        action: String,
+        launchInSmallWindow: Boolean = false
+    ) {
         val intent = Intent().setComponent(ComponentName(packageName, className))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (action.isNotBlank()) intent.action = action
+
+        if (launchInSmallWindow) {
+            val launched = runCatching {
+                val options = ActivityOptions.makeBasic()
+                XposedHelpers.callMethod(options, "setLaunchWindowingMode", SMALL_WINDOW_MODE)
+                context.startActivity(intent, options.toBundle())
+                true
+            }.onXposedFailure("launch Activity in small-window mode").getOrDefault(false)
+            if (launched) return
+            XposedBridge.log("CustomSideButtonFunctions: small-window launch unavailable, falling back to normal launch")
+        }
         context.startActivity(intent)
     }
 
@@ -507,7 +526,13 @@ internal class ActionExecutor {
             XposedBridge.log("CustomSideButtonFunctions: custom Activity is empty")
             return
         }
-        startActivity(context, custom.activityPackage, custom.activityClass, custom.activityAction)
+        startActivity(
+            context,
+            custom.activityPackage,
+            custom.activityClass,
+            custom.activityAction,
+            custom.launchInSmallWindow
+        )
     }
 
     private fun openUrl(context: Context, value: String) {

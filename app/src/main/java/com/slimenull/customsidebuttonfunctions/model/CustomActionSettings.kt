@@ -5,6 +5,7 @@ data class CustomActionSettings(
     val activityPackage: String = "",
     val activityClass: String = "",
     val activityAction: String = "",
+    val launchInSmallWindow: Boolean = false,
     val urlScheme: String = "",
     val xiaobuShortcutId: String = "",
     val shellCommand: String = "",

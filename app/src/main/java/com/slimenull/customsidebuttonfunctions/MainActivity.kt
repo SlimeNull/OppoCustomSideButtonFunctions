@@ -1450,6 +1450,11 @@ private fun CustomActionEditor(
                 OutlinedTextField(custom.activityPackage, { onChange(custom.copy(activityPackage = it)) }, label = { Text("包名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(custom.activityClass, { onChange(custom.copy(activityClass = it)) }, label = { Text("Activity 类名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(custom.activityAction, { onChange(custom.copy(activityAction = it)) }, label = { Text("Intent Action（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                SettingSwitchRow(
+                    title = "以小窗模式运行",
+                    checked = custom.launchInSmallWindow,
+                    onCheckedChange = { onChange(custom.copy(launchInSmallWindow = it)) }
+                )
             }
         }
         ActionType.CUSTOM_URL -> {
