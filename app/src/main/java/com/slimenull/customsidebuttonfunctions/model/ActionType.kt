@@ -3,6 +3,7 @@ package com.slimenull.customsidebuttonfunctions.model
 /** Actions exposed to every gesture. KEEP enum names stable: they are persisted in SharedPreferences. */
 enum class ActionType(val title: String, val description: String) {
     NONE("不执行操作", "禁用此手势"),
+    SHOW_RINGER("显示响铃 / 振动 / 静音状态", "显示当前的响铃模式"),
     CYCLE_RINGER("切换响铃 / 振动 / 静音", "按响铃、振动、静音顺序循环"),
     TOGGLE_DND("开启或关闭免打扰", "在开启和关闭之间切换"),
     CAMERA("打开相机", "启动系统默认相机"),

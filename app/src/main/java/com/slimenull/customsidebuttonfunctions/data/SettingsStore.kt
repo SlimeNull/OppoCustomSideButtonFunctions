@@ -46,8 +46,11 @@ object SettingsStore {
     private const val KEY_LONG_PRESS_MS = "long_press_ms"
     private const val KEY_DOUBLE_WINDOW_MS = "double_click_window_ms"
     private const val KEY_SINGLE_ACTION = "single_action"
+    private const val KEY_SINGLE_WAKE_SCREEN = "single_wake_screen"
     private const val KEY_DOUBLE_ACTION = "double_action"
+    private const val KEY_DOUBLE_WAKE_SCREEN = "double_wake_screen"
     private const val KEY_LONG_ACTION = "long_action"
+    private const val KEY_LONG_WAKE_SCREEN = "long_wake_screen"
     private const val KEY_OPERATION_MODE = "operation_mode"
     private const val KEY_MORSE_LONG_PRESS_MS = "morse_long_press_ms"
     private const val KEY_MORSE_COMMAND_WINDOW_MS = "morse_command_window_ms"
@@ -157,8 +160,20 @@ object SettingsStore {
         longPressMs = preferences.getLong(KEY_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
         doubleClickWindowMs = preferences.getLong(KEY_DOUBLE_WINDOW_MS, 300L).coerceIn(100L, 800L),
         singleAction = action(preferences.getString(KEY_SINGLE_ACTION, null)),
+        singleWakeScreen = preferences.getBoolean(
+            KEY_SINGLE_WAKE_SCREEN,
+            preferences.getString(KEY_SINGLE_ACTION, null)?.let { it == ActionType.CYCLE_RINGER.name } ?: true
+        ),
         doubleAction = action(preferences.getString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
+        doubleWakeScreen = preferences.getBoolean(
+            KEY_DOUBLE_WAKE_SCREEN,
+            preferences.getString(KEY_DOUBLE_ACTION, null) == ActionType.CYCLE_RINGER.name
+        ),
         longAction = action(preferences.getString(KEY_LONG_ACTION, null), ActionType.SCREENSHOT),
+        longWakeScreen = preferences.getBoolean(
+            KEY_LONG_WAKE_SCREEN,
+            preferences.getString(KEY_LONG_ACTION, null) == ActionType.CYCLE_RINGER.name
+        ),
         operationMode = preferences.getString(KEY_OPERATION_MODE, null)
             ?.let { runCatching { OperationMode.valueOf(it) }.onXposedFailure("parse operation mode").getOrNull() }
             ?: OperationMode.SIMPLE,
@@ -202,8 +217,11 @@ object SettingsStore {
         put(KEY_LONG_PRESS_MS, settings.longPressMs)
         put(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
         put(KEY_SINGLE_ACTION, settings.singleAction.name)
+        put(KEY_SINGLE_WAKE_SCREEN, settings.singleWakeScreen)
         put(KEY_DOUBLE_ACTION, settings.doubleAction.name)
+        put(KEY_DOUBLE_WAKE_SCREEN, settings.doubleWakeScreen)
         put(KEY_LONG_ACTION, settings.longAction.name)
+        put(KEY_LONG_WAKE_SCREEN, settings.longWakeScreen)
         put(KEY_OPERATION_MODE, settings.operationMode.name)
         put(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
         put(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
@@ -233,10 +251,22 @@ object SettingsStore {
         inputDevicePath = json.optString(KEY_INPUT_PATH, "/dev/input/event0"),
         longPressMs = json.optLong(KEY_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
         doubleClickWindowMs = json.optLong(KEY_DOUBLE_WINDOW_MS, 300L).coerceIn(100L, 800L),
-        singleAction = action(json.optString(KEY_SINGLE_ACTION, null)),
-        doubleAction = action(json.optString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
-        longAction = action(json.optString(KEY_LONG_ACTION, null), ActionType.SCREENSHOT),
-        operationMode = enumValue(json.optString(KEY_OPERATION_MODE, null), OperationMode.SIMPLE, "operation mode"),
+        singleAction = action(optionalString(json, KEY_SINGLE_ACTION)),
+        singleWakeScreen = json.optBoolean(
+            KEY_SINGLE_WAKE_SCREEN,
+            optionalString(json, KEY_SINGLE_ACTION)?.let { it == ActionType.CYCLE_RINGER.name } ?: true
+        ),
+        doubleAction = action(optionalString(json, KEY_DOUBLE_ACTION), ActionType.NONE),
+        doubleWakeScreen = json.optBoolean(
+            KEY_DOUBLE_WAKE_SCREEN,
+            optionalString(json, KEY_DOUBLE_ACTION) == ActionType.CYCLE_RINGER.name
+        ),
+        longAction = action(optionalString(json, KEY_LONG_ACTION), ActionType.SCREENSHOT),
+        longWakeScreen = json.optBoolean(
+            KEY_LONG_WAKE_SCREEN,
+            optionalString(json, KEY_LONG_ACTION) == ActionType.CYCLE_RINGER.name
+        ),
+        operationMode = enumValue(optionalString(json, KEY_OPERATION_MODE), OperationMode.SIMPLE, "operation mode"),
         morseLongPressMs = json.optLong(KEY_MORSE_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
         morseCommandWindowMs = json.optLong(KEY_MORSE_COMMAND_WINDOW_MS, 300L).coerceIn(100L, 800L),
         morsePressVibrationEnabled = json.optBoolean(KEY_MORSE_PRESS_VIBRATION, false),
@@ -252,9 +282,9 @@ object SettingsStore {
         unknownMorseFeedbackEnabled = json.optBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, false),
         unknownMorseToastText = json.optString(KEY_UNKNOWN_MORSE_TOAST_TEXT, DEFAULT_UNKNOWN_MORSE_TOAST),
         wakeScreenWhenOff = json.optBoolean(KEY_WAKE_SCREEN, false),
-        cursorControlMode = enumValue(json.optString(KEY_CURSOR_CONTROL_MODE, null), CursorControlMode.DISABLED, "cursor control mode"),
+        cursorControlMode = enumValue(optionalString(json, KEY_CURSOR_CONTROL_MODE), CursorControlMode.DISABLED, "cursor control mode"),
         cursorLongPressAction = enumValue(
-            json.optString(KEY_CURSOR_LONG_PRESS_ACTION, null),
+            optionalString(json, KEY_CURSOR_LONG_PRESS_ACTION),
             CursorLongPressAction.NONE,
             "cursor long-press action"
         ),
@@ -281,7 +311,7 @@ object SettingsStore {
 
     private fun customFromJson(json: JSONObject?): CustomActionSettings {
         val value = json ?: JSONObject()
-        val common = enumValue(value.optString("common_action", null), CommonAction.WECHAT_PAY, "common action")
+        val common = enumValue(optionalString(value, "common_action"), CommonAction.WECHAT_PAY, "common action")
         return CustomActionSettings(
             commonAction = common,
             activityPackage = value.optString("activity_package", ""),
@@ -294,6 +324,9 @@ object SettingsStore {
             shellToastEnabled = value.optBoolean("shell_toast_enabled", true)
         )
     }
+
+    private fun optionalString(json: JSONObject, key: String): String? =
+        if (json.has(key) && !json.isNull(key)) json.optString(key) else null
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =
         value?.let { runCatching { ActionType.valueOf(it) }.onXposedFailure("parse action").getOrNull() } ?: fallback
@@ -331,6 +364,7 @@ object SettingsStore {
                     put("shell_command", binding.custom.shellCommand)
                     put("shell_toast_enabled", binding.custom.shellToastEnabled)
                 })
+                put("wake_screen", binding.wakeScreen)
             })
         }
     }.toString()
@@ -346,7 +380,7 @@ object SettingsStore {
             val action = runCatching { ActionType.valueOf(entry.optString("action")) }
                 .onXposedFailure("parse Morse action")
                 .getOrNull()
-                ?.takeIf { it != ActionType.NONE } ?: return@mapNotNull null
+                ?: return@mapNotNull null
             val custom = entry.optJSONObject("custom") ?: JSONObject()
             val common = runCatching { CommonAction.valueOf(custom.optString("common_action")) }
                 .onXposedFailure("parse Morse common action")
@@ -365,7 +399,8 @@ object SettingsStore {
                     xiaobuShortcutId = custom.optString("xiaobu_shortcut_id"),
                     shellCommand = custom.optString("shell_command"),
                     shellToastEnabled = custom.optBoolean("shell_toast_enabled", true)
-                )
+                ),
+                wakeScreen = entry.optBoolean("wake_screen", action == ActionType.CYCLE_RINGER)
             )
         }.distinctBy { it.sequence }
     }

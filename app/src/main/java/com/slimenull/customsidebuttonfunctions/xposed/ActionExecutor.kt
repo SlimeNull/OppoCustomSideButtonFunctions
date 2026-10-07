@@ -105,18 +105,21 @@ internal class ActionExecutor {
         action: ActionType,
         custom: CustomActionSettings,
         settings: AppSettings,
-        interactive: Boolean = true
+        interactive: Boolean = true,
+        wakeScreen: Boolean = false
     ) {
         XposedBridge.log("CustomSideButtonFunctions: executing action=$action")
         val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
         runCatching {
-            if (!interactive && settings.wakeScreenWhenOff) {
+            if (wakeScreen || (!interactive && settings.wakeScreenWhenOff)) {
                 // Oplus' strategy exposes the same wakeup operation used by its stock shortcut.
                 runCatching { strategy?.let { XposedHelpers.callMethod(it, "wakeup") } }
                     .onXposedFailure("wake screen")
             }
+            var cycleMode: Int? = null
             when (action) {
-                ActionType.CYCLE_RINGER -> cycleRinger(currentContext)
+                ActionType.SHOW_RINGER -> showRingerMode(currentContext)
+                ActionType.CYCLE_RINGER -> cycleMode = cycleRinger(currentContext)
                 ActionType.TOGGLE_DND -> toggleDnd(currentContext)
                 ActionType.CAMERA -> openCamera(currentContext)
                 ActionType.FLASHLIGHT -> toggleTorch(currentContext)
@@ -129,7 +132,7 @@ internal class ActionExecutor {
                 ActionType.SHELL_COMMAND -> executeShell(custom.shellCommand, custom.shellToastEnabled)
                 ActionType.NONE -> return
             }
-            feedback(currentContext, action, settings)
+            feedback(currentContext, action, settings, cycleMode)
         }.onXposedFailure("execute action")
     }
 
@@ -141,7 +144,12 @@ internal class ActionExecutor {
         threadClass.getMethod("getSystemContext").invoke(thread) as? Context
     }.onXposedFailure("resolve system context").getOrNull()
 
-    private fun cycleRinger(context: Context) {
+    private fun showRingerMode(context: Context) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        sendRingModeSeedling(context, getRingerModeInternal(audio))
+    }
+
+    private fun cycleRinger(context: Context): Int {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val nextMode = when (getRingerModeInternal(audio)) {
             RINGER_MODE_NORMAL -> RINGER_MODE_VIBRATE
@@ -152,6 +160,7 @@ internal class ActionExecutor {
         // internal AudioManager state used by the stock action.
         sendRingModeSeedling(context, nextMode)
         setRingerMode(audio, nextMode)
+        return nextMode
     }
 
     /** ActionKeyStartApp reads the internal state before cycling; public ringerMode is fallback. */
@@ -504,8 +513,14 @@ internal class ActionExecutor {
         action: String,
         launchInSmallWindow: Boolean = false
     ) {
-        val intent = Intent().setComponent(ComponentName(packageName, className))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val intent = if (className.isBlank()) {
+            context.packageManager.getLaunchIntentForPackage(packageName)
+                ?: Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setPackage(packageName)
+        } else {
+            Intent().setComponent(ComponentName(packageName, className))
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (action.isNotBlank()) intent.action = action
 
         if (launchInSmallWindow) {
@@ -522,8 +537,8 @@ internal class ActionExecutor {
     }
 
     private fun startCustomActivity(context: Context, custom: CustomActionSettings) {
-        if (custom.activityPackage.isBlank() || custom.activityClass.isBlank()) {
-            XposedBridge.log("CustomSideButtonFunctions: custom Activity is empty")
+        if (custom.activityPackage.isBlank()) {
+            XposedBridge.log("CustomSideButtonFunctions: custom Activity package is empty")
             return
         }
         startActivity(
@@ -635,9 +650,44 @@ internal class ActionExecutor {
         }
     }
 
-    private fun feedback(context: Context, action: ActionType, settings: AppSettings) {
-        if (settings.vibrationEnabled) vibrateInstant(context)
+    private fun feedback(context: Context, action: ActionType, settings: AppSettings, cycleMode: Int?) {
+        if (settings.vibrationEnabled) {
+            if (action == ActionType.CYCLE_RINGER && cycleMode != null) {
+                vibrateRingerMode(context, cycleMode)
+            } else {
+                vibrateInstant(context)
+            }
+        }
         if (settings.toastEnabled) showToast(context, settings.toastText.ifBlank { action.title })
+    }
+
+    private fun vibrateRingerMode(context: Context, mode: Int) {
+        when (mode) {
+            RINGER_MODE_NORMAL -> vibrateDuration(context, 200L)
+            RINGER_MODE_VIBRATE -> repeatTapVibration(context, 3)
+            RINGER_MODE_SILENT -> vibrateInstant(context)
+            else -> vibrateInstant(context)
+        }
+    }
+
+    private fun repeatTapVibration(context: Context, count: Int) {
+        val handler = Handler(Looper.getMainLooper())
+        repeat(count) { index ->
+            handler.postDelayed({ vibrateInstant(context) }, index * 100L)
+        }
+    }
+
+    private fun vibrateDuration(context: Context, durationMs: Long) {
+        runCatching {
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (vibrator?.hasVibrator() != true) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(durationMs)
+            }
+        }.onXposedFailure("vibrate duration")
     }
 
     private fun vibrateInstant(context: Context) {

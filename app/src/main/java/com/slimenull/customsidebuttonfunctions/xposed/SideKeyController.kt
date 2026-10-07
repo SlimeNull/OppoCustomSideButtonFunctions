@@ -77,7 +77,14 @@ internal class SideKeyController {
                             return@synchronized
                         }
                         longTriggered = true
-                        execute(activeSettings.longAction, activeSettings.longCustom, activeSettings, executor, activeInteractive)
+                        execute(
+                            activeSettings.longAction,
+                            activeSettings.longCustom,
+                            activeSettings,
+                            executor,
+                            activeInteractive,
+                            activeSettings.longWakeScreen
+                        )
                     }
                 }
             }
@@ -107,11 +114,25 @@ internal class SideKeyController {
             }
             if (secondClick) {
                 secondClick = false
-                execute(activeSettings.doubleAction, activeSettings.doubleCustom, activeSettings, executor, activeInteractive)
+                execute(
+                    activeSettings.doubleAction,
+                    activeSettings.doubleCustom,
+                    activeSettings,
+                    executor,
+                    activeInteractive,
+                    activeSettings.doubleWakeScreen
+                )
                 return
             }
             if (settings.doubleAction == ActionType.NONE) {
-                execute(activeSettings.singleAction, activeSettings.singleCustom, activeSettings, executor, activeInteractive)
+                execute(
+                    activeSettings.singleAction,
+                    activeSettings.singleCustom,
+                    activeSettings,
+                    executor,
+                    activeInteractive,
+                    activeSettings.singleWakeScreen
+                )
                 return
             }
             pendingSingle = true
@@ -121,7 +142,14 @@ internal class SideKeyController {
                         pendingSingle = false
                         val current = SettingsReader.load()
                         if (current.enabled && current.operationMode == OperationMode.SIMPLE) {
-                            execute(activeSettings.singleAction, activeSettings.singleCustom, activeSettings, executor, activeInteractive)
+                            execute(
+                                activeSettings.singleAction,
+                                activeSettings.singleCustom,
+                                activeSettings,
+                                executor,
+                                activeInteractive,
+                                activeSettings.singleWakeScreen
+                            )
                         }
                     }
                 }
@@ -177,7 +205,7 @@ internal class SideKeyController {
                             morseSequence.clear()
                             morseFinishRunnable?.let(handler::removeCallbacks)
                             morseFinishRunnable = null
-                            execute(binding.action, binding.custom, current, executor, activeInteractive)
+                            execute(binding.action, binding.custom, current, executor, activeInteractive, binding.wakeScreen)
                             return@synchronized
                         }
                             if (activeSettings.morseLongVibrationEnabled) executor.vibrateInstantCue()
@@ -249,7 +277,7 @@ internal class SideKeyController {
             executor.notifyUnknownMorseSequence(settings)
             return
         }
-        execute(binding.action, binding.custom, settings, executor, activeInteractive)
+        execute(binding.action, binding.custom, settings, executor, activeInteractive, binding.wakeScreen)
     }
 
     private fun resetMorseState() {
@@ -267,8 +295,9 @@ internal class SideKeyController {
         custom: CustomActionSettings,
         settings: AppSettings,
         executor: ActionExecutor,
-        interactive: Boolean
+        interactive: Boolean,
+        wakeScreen: Boolean
     ) {
-        if (action != ActionType.NONE) executor.execute(action, custom, settings, interactive)
+        if (action != ActionType.NONE) executor.execute(action, custom, settings, interactive, wakeScreen)
     }
 }

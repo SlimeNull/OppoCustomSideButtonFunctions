@@ -241,7 +241,7 @@ private val actionChoices = ActionType.entries.flatMap { action ->
         listOf(ActionChoice(action))
     }
 }
-private val morseActionChoices = actionChoices.filter { it.action != ActionType.NONE }
+private val morseActionChoices = actionChoices
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -676,6 +676,7 @@ private fun GestureScreen(
     }
     val currentAction = selectedAction(kind, settings)
     val currentCustom = selectedCustom(kind, settings)
+    val currentWakeScreen = selectedWakeScreen(kind, settings)
     Column(Modifier.fillMaxSize().padding(padding)) {
         BackTitle(kind.title, back)
         LazyColumn(
@@ -739,6 +740,16 @@ private fun GestureScreen(
             item {
                 CustomActionEditor(currentAction, currentCustom) {
                     persist(updateCustom(kind, settings, it))
+                }
+            }
+          }
+          item { SectionLabel("选项") }
+          item {
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(14.dp)) {
+                    SettingSwitchRow("执行时亮屏", currentWakeScreen) {
+                        persist(updateWakeScreen(kind, settings, it))
+                    }
                 }
             }
           }
@@ -917,6 +928,9 @@ private fun MorseBindingEditorDialog(
     var sequence by remember(original) { mutableStateOf(original?.sequence.orEmpty()) }
     var action by remember(original) { mutableStateOf(original?.action ?: ActionType.SCREENSHOT) }
     var custom by remember(original) { mutableStateOf(original?.custom ?: CustomActionSettings()) }
+    var wakeScreen by remember(original) {
+        mutableStateOf(original?.wakeScreen ?: (action == ActionType.CYCLE_RINGER))
+    }
     var showError by remember(original) { mutableStateOf(false) }
     val error = when {
         sequence.isEmpty() -> "请输入指令序列"
@@ -962,17 +976,24 @@ private fun MorseBindingEditorDialog(
                 SectionLabel("执行动作")
                 ActionPicker(selected, morseActionChoices) { choice ->
                     action = choice.action
+                    wakeScreen = choice.action == ActionType.CYCLE_RINGER
                     if (choice.common != null) custom = custom.copy(commonAction = choice.common)
                 }
                 if (action in listOf(ActionType.XIAOBU_SHORTCUT, ActionType.CUSTOM_ACTIVITY,
                         ActionType.CUSTOM_URL, ActionType.SHELL_COMMAND)) {
                     CustomActionEditor(action, custom) { custom = it }
                 }
+                SectionLabel("选项")
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp)) {
+                        SettingSwitchRow("执行时亮屏", wakeScreen) { wakeScreen = it }
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("取消") }
                     Button(onClick = {
                         showError = true
-                        if (error == null) onSave(MorseBinding(sequence, action, custom))
+                        if (error == null) onSave(MorseBinding(sequence, action, custom, wakeScreen))
                     }) { Text("保存") }
                 }
             }
@@ -1273,7 +1294,7 @@ private fun AboutScreen(padding: PaddingValues) {
             Text("一加侧键自定义功能", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("让你的侧键，做更多的事", color = AppMuted, modifier = Modifier.padding(top = 6.dp))
             Text("com.slimenull.customsidebuttonfunctions", style = MaterialTheme.typography.bodySmall, color = AppMuted, modifier = Modifier.padding(top = 8.dp))
-            Text("版本 1.0.0", style = MaterialTheme.typography.bodySmall, color = AppMuted)
+            Text("版本 ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall, color = AppMuted)
           }
            item {
              Spacer(Modifier.height(22.dp))
@@ -1496,7 +1517,7 @@ private fun CustomActionEditor(
         ActionType.CUSTOM_ACTIVITY -> {
             ParameterCard("Activity 参数") {
                 OutlinedTextField(custom.activityPackage, { onChange(custom.copy(activityPackage = it)) }, label = { Text("包名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(custom.activityClass, { onChange(custom.copy(activityClass = it)) }, label = { Text("Activity 类名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(custom.activityClass, { onChange(custom.copy(activityClass = it)) }, label = { Text("Activity 类名（可选，留空使用默认 Activity）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(custom.activityAction, { onChange(custom.copy(activityAction = it)) }, label = { Text("Intent Action（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 SettingSwitchRow(
                     title = "以小窗模式运行",
@@ -1623,10 +1644,22 @@ private fun selectedCustom(kind: GestureKind, settings: AppSettings): CustomActi
     GestureKind.LONG -> settings.longCustom
 }
 
+private fun selectedWakeScreen(kind: GestureKind, settings: AppSettings): Boolean = when (kind) {
+    GestureKind.SINGLE -> settings.singleWakeScreen
+    GestureKind.DOUBLE -> settings.doubleWakeScreen
+    GestureKind.LONG -> settings.longWakeScreen
+}
+
 private fun updateAction(kind: GestureKind, settings: AppSettings, action: ActionType): AppSettings = when (kind) {
-    GestureKind.SINGLE -> settings.copy(singleAction = action)
-    GestureKind.DOUBLE -> settings.copy(doubleAction = action)
-    GestureKind.LONG -> settings.copy(longAction = action)
+    GestureKind.SINGLE -> settings.copy(singleAction = action, singleWakeScreen = action == ActionType.CYCLE_RINGER)
+    GestureKind.DOUBLE -> settings.copy(doubleAction = action, doubleWakeScreen = action == ActionType.CYCLE_RINGER)
+    GestureKind.LONG -> settings.copy(longAction = action, longWakeScreen = action == ActionType.CYCLE_RINGER)
+}
+
+private fun updateWakeScreen(kind: GestureKind, settings: AppSettings, enabled: Boolean): AppSettings = when (kind) {
+    GestureKind.SINGLE -> settings.copy(singleWakeScreen = enabled)
+    GestureKind.DOUBLE -> settings.copy(doubleWakeScreen = enabled)
+    GestureKind.LONG -> settings.copy(longWakeScreen = enabled)
 }
 
 private fun updateCustom(kind: GestureKind, settings: AppSettings, custom: CustomActionSettings): AppSettings = when (kind) {
@@ -1643,6 +1676,7 @@ private fun gestureIcon(kind: GestureKind): ImageVector = when (kind) {
 
 private fun actionIcon(action: ActionType): ImageVector = when (action) {
     ActionType.NONE -> Icons.Default.RemoveCircleOutline
+    ActionType.SHOW_RINGER -> Icons.Default.VolumeUp
     ActionType.CYCLE_RINGER -> Icons.Default.VolumeUp
     ActionType.TOGGLE_DND -> Icons.Default.NotificationsOff
     ActionType.CAMERA -> Icons.Default.CameraAlt
