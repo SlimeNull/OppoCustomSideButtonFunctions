@@ -6,6 +6,6 @@ import com.slimenull.customsidebuttonfunctions.data.SettingsStore
 class CustomSideButtonApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        SettingsStore.initializeRemotePreferences(this)
+        SettingsStore.initializeRemoteStorage(this)
     }
 }

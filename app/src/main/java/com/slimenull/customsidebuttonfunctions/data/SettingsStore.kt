@@ -2,6 +2,7 @@ package com.slimenull.customsidebuttonfunctions.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.ParcelFileDescriptor
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import com.slimenull.customsidebuttonfunctions.xposed.XposedBridge
 import com.slimenull.customsidebuttonfunctions.model.ActionType
@@ -21,12 +22,15 @@ import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
+import java.io.FileNotFoundException
+import java.nio.charset.StandardCharsets
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A deliberately simple preference format so LSPosed remote preferences can consume it from system_server. */
+/** Stores a complete settings snapshot in LibXposed's shared remote file. */
 object SettingsStore {
     const val PREFS_NAME = "settings"
+    const val REMOTE_FILE_NAME = "settings.json"
 
     @Volatile
     private var remoteService: XposedService? = null
@@ -63,14 +67,14 @@ object SettingsStore {
     private const val KEY_CURSOR_REPEAT_INTERVAL_MS = "cursor_repeat_interval_ms"
 
     @Synchronized
-    fun initializeRemotePreferences(context: Context? = null) {
+    fun initializeRemoteStorage(context: Context? = null) {
         context?.let { applicationContext = it.applicationContext }
         if (remoteBridgeInitialized) return
         remoteBridgeInitialized = true
         XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
             override fun onServiceBind(service: XposedService) {
                 remoteService = service
-                val pending = pendingRemoteSettings ?: migrateLocalSettingsIfRemoteIsEmpty(service) ?: return
+                val pending = pendingRemoteSettings ?: migrateSettingsIfRemoteEmpty(service) ?: return
                 if (writeRemote(service, pending)) pendingRemoteSettings = null
             }
 
@@ -81,77 +85,70 @@ object SettingsStore {
     }
 
     fun load(context: Context): AppSettings {
-        initializeRemotePreferences(context)
-        val preferences = remotePreferences() ?: preferences(context)
-        return fromPreferences(preferences)
+        initializeRemoteStorage(context)
+        return readRemote(remoteService) ?: fromPreferences(preferences(context))
     }
 
     fun save(settings: AppSettings) {
-        initializeRemotePreferences()
+        initializeRemoteStorage()
         if (!writeRemote(settings)) pendingRemoteSettings = settings
     }
 
-    private fun migrateLocalSettingsIfRemoteIsEmpty(service: XposedService): AppSettings? {
-        val context = applicationContext ?: return null
+    private fun migrateSettingsIfRemoteEmpty(service: XposedService): AppSettings? {
         return try {
-            val remote = service.getRemotePreferences(PREFS_NAME)
-            if (remote.all.isEmpty()) fromPreferences(preferences(context)) else null
+            if (readRemote(service) != null) return null
+
+            // Preserve settings written by the previous 102 preference implementation.
+            val oldRemote = runCatching { service.getRemotePreferences(PREFS_NAME) }
+                .onXposedFailure("read legacy remote preferences")
+                .getOrNull()
+            if (oldRemote?.all?.isNotEmpty() == true) return fromPreferences(oldRemote)
+
+            val context = applicationContext ?: return null
+            fromPreferences(preferences(context))
         } catch (error: Throwable) {
-            XposedBridge.log("CustomSideButtonFunctions: migrate local preferences failed: ${error.message}")
+            XposedBridge.log("CustomSideButtonFunctions: migrate existing settings failed: ${error.message}")
             XposedBridge.log(error)
             null
         }
     }
 
-    private fun remotePreferences(): SharedPreferences? = remoteService?.let { service ->
-        runCatching { service.getRemotePreferences(PREFS_NAME) }
-            .onXposedFailure("load remote preferences")
-            .getOrNull()
-    }
-
     private fun writeRemote(settings: AppSettings): Boolean = remoteService?.let { writeRemote(it, settings) } == true
 
     private fun writeRemote(service: XposedService, settings: AppSettings): Boolean = runCatching {
-        write(service.getRemotePreferences(PREFS_NAME), settings)
-    }.onXposedFailure("save remote preferences").getOrDefault(false)
+        val descriptor = service.openRemoteFile(REMOTE_FILE_NAME)
+        ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
+            output.channel.truncate(0)
+            output.write(toJson(settings).toString().toByteArray(StandardCharsets.UTF_8))
+            output.channel.force(true)
+        }
+        true
+    }.onXposedFailure("save remote settings file").getOrDefault(false)
+
+    private fun readRemote(service: XposedService?): AppSettings? {
+        if (service == null) return null
+        return try {
+            val descriptor = service.openRemoteFile(REMOTE_FILE_NAME)
+            if (descriptor.statSize <= 0L) {
+                descriptor.close()
+                null
+            } else {
+                ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
+                    fromJson(JSONObject(input.readBytes().toString(StandardCharsets.UTF_8)))
+                }
+            }
+        } catch (_: FileNotFoundException) {
+            null
+        } catch (error: Throwable) {
+            XposedBridge.log("CustomSideButtonFunctions: load remote settings file failed: ${error.message}")
+            XposedBridge.log(error)
+            null
+        }
+    }
 
     private fun preferences(context: Context): SharedPreferences = context
         .createDeviceProtectedStorageContext()
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private fun write(preferences: SharedPreferences, settings: AppSettings): Boolean {
-        return preferences.edit()
-            .putBoolean(KEY_ENABLED, settings.enabled)
-            .putInt(KEY_KEY_CODE, settings.keyCode)
-            .putString(KEY_INPUT_PATH, settings.inputDevicePath)
-            .putLong(KEY_LONG_PRESS_MS, settings.longPressMs)
-            .putLong(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
-            .putString(KEY_SINGLE_ACTION, settings.singleAction.name)
-            .putString(KEY_DOUBLE_ACTION, settings.doubleAction.name)
-            .putString(KEY_LONG_ACTION, settings.longAction.name)
-            .putString(KEY_OPERATION_MODE, settings.operationMode.name)
-            .putLong(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
-            .putLong(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
-            .putBoolean(KEY_MORSE_PRESS_VIBRATION, settings.morsePressVibrationEnabled)
-            .putBoolean(KEY_MORSE_LONG_VIBRATION, settings.morseLongVibrationEnabled)
-            .putBoolean(KEY_MORSE_IMMEDIATE_EXECUTION, settings.morseImmediateExecutionEnabled)
-            .putString(KEY_MORSE_BINDINGS, writeMorseBindings(settings.morseBindings))
-            .also { writeCustom(it, "single_", settings.singleCustom) }
-            .also { writeCustom(it, "double_", settings.doubleCustom) }
-            .also { writeCustom(it, "long_", settings.longCustom) }
-            .putBoolean(KEY_VIBRATION_ENABLED, settings.vibrationEnabled)
-            .putBoolean(KEY_TOAST_ENABLED, settings.toastEnabled)
-            .putString(KEY_TOAST_TEXT, settings.toastText)
-            .putBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, settings.unknownMorseFeedbackEnabled)
-            .putString(KEY_UNKNOWN_MORSE_TOAST_TEXT, settings.unknownMorseToastText)
-            .putBoolean(KEY_WAKE_SCREEN, settings.wakeScreenWhenOff)
-            .putString(KEY_CURSOR_CONTROL_MODE, settings.cursorControlMode.name)
-            .putString(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
-            .putLong(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
-            .putLong(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
-            // commit() ensures the remote preference bridge sees a just-saved gesture immediately.
-            .commit()
-    }
 
     fun fromPreferences(preferences: SharedPreferences): AppSettings = AppSettings(
         enabled = preferences.getBoolean(KEY_ENABLED, true),
@@ -197,20 +194,109 @@ object SettingsStore {
             .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS)
     )
 
+    /** Serialize the complete settings snapshot used by the LibXposed remote-file bridge. */
+    internal fun toJson(settings: AppSettings): JSONObject = JSONObject().apply {
+        put(KEY_ENABLED, settings.enabled)
+        put(KEY_KEY_CODE, settings.keyCode)
+        put(KEY_INPUT_PATH, settings.inputDevicePath)
+        put(KEY_LONG_PRESS_MS, settings.longPressMs)
+        put(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
+        put(KEY_SINGLE_ACTION, settings.singleAction.name)
+        put(KEY_DOUBLE_ACTION, settings.doubleAction.name)
+        put(KEY_LONG_ACTION, settings.longAction.name)
+        put(KEY_OPERATION_MODE, settings.operationMode.name)
+        put(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
+        put(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
+        put(KEY_MORSE_PRESS_VIBRATION, settings.morsePressVibrationEnabled)
+        put(KEY_MORSE_LONG_VIBRATION, settings.morseLongVibrationEnabled)
+        put(KEY_MORSE_IMMEDIATE_EXECUTION, settings.morseImmediateExecutionEnabled)
+        put(KEY_MORSE_BINDINGS, JSONArray(writeMorseBindings(settings.morseBindings)))
+        put("single_custom", customToJson(settings.singleCustom))
+        put("double_custom", customToJson(settings.doubleCustom))
+        put("long_custom", customToJson(settings.longCustom))
+        put(KEY_VIBRATION_ENABLED, settings.vibrationEnabled)
+        put(KEY_TOAST_ENABLED, settings.toastEnabled)
+        put(KEY_TOAST_TEXT, settings.toastText)
+        put(KEY_UNKNOWN_MORSE_FEEDBACK, settings.unknownMorseFeedbackEnabled)
+        put(KEY_UNKNOWN_MORSE_TOAST_TEXT, settings.unknownMorseToastText)
+        put(KEY_WAKE_SCREEN, settings.wakeScreenWhenOff)
+        put(KEY_CURSOR_CONTROL_MODE, settings.cursorControlMode.name)
+        put(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
+        put(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
+        put(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
+    }
+
+    /** Deserialize a remote-file snapshot, applying the same bounds and defaults as preferences. */
+    internal fun fromJson(json: JSONObject): AppSettings = AppSettings(
+        enabled = json.optBoolean(KEY_ENABLED, true),
+        keyCode = json.optInt(KEY_KEY_CODE, 735),
+        inputDevicePath = json.optString(KEY_INPUT_PATH, "/dev/input/event0"),
+        longPressMs = json.optLong(KEY_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
+        doubleClickWindowMs = json.optLong(KEY_DOUBLE_WINDOW_MS, 300L).coerceIn(100L, 800L),
+        singleAction = action(json.optString(KEY_SINGLE_ACTION, null)),
+        doubleAction = action(json.optString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
+        longAction = action(json.optString(KEY_LONG_ACTION, null), ActionType.SCREENSHOT),
+        operationMode = enumValue(json.optString(KEY_OPERATION_MODE, null), OperationMode.SIMPLE, "operation mode"),
+        morseLongPressMs = json.optLong(KEY_MORSE_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
+        morseCommandWindowMs = json.optLong(KEY_MORSE_COMMAND_WINDOW_MS, 300L).coerceIn(100L, 800L),
+        morsePressVibrationEnabled = json.optBoolean(KEY_MORSE_PRESS_VIBRATION, false),
+        morseLongVibrationEnabled = json.optBoolean(KEY_MORSE_LONG_VIBRATION, true),
+        morseImmediateExecutionEnabled = json.optBoolean(KEY_MORSE_IMMEDIATE_EXECUTION, true),
+        morseBindings = readMorseBindings(json.optJSONArray(KEY_MORSE_BINDINGS)?.toString()),
+        singleCustom = customFromJson(json.optJSONObject("single_custom")),
+        doubleCustom = customFromJson(json.optJSONObject("double_custom")),
+        longCustom = customFromJson(json.optJSONObject("long_custom")),
+        vibrationEnabled = json.optBoolean(KEY_VIBRATION_ENABLED, true),
+        toastEnabled = json.optBoolean(KEY_TOAST_ENABLED, false),
+        toastText = json.optString(KEY_TOAST_TEXT, "侧键操作已执行"),
+        unknownMorseFeedbackEnabled = json.optBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, false),
+        unknownMorseToastText = json.optString(KEY_UNKNOWN_MORSE_TOAST_TEXT, DEFAULT_UNKNOWN_MORSE_TOAST),
+        wakeScreenWhenOff = json.optBoolean(KEY_WAKE_SCREEN, false),
+        cursorControlMode = enumValue(json.optString(KEY_CURSOR_CONTROL_MODE, null), CursorControlMode.DISABLED, "cursor control mode"),
+        cursorLongPressAction = enumValue(
+            json.optString(KEY_CURSOR_LONG_PRESS_ACTION, null),
+            CursorLongPressAction.NONE,
+            "cursor long-press action"
+        ),
+        cursorLongPressMs = json.optLong(KEY_CURSOR_LONG_PRESS_MS, DEFAULT_CURSOR_LONG_PRESS_MS)
+            .coerceIn(MIN_CURSOR_LONG_PRESS_MS, MAX_CURSOR_LONG_PRESS_MS),
+        cursorRepeatIntervalMs = json.optLong(KEY_CURSOR_REPEAT_INTERVAL_MS, DEFAULT_CURSOR_REPEAT_INTERVAL_MS)
+            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS)
+    )
+
+    private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T, description: String): T =
+        value?.let { runCatching { enumValueOf<T>(it) }.onXposedFailure("parse $description").getOrNull() } ?: fallback
+
+    private fun customToJson(custom: CustomActionSettings): JSONObject = JSONObject().apply {
+        put("common_action", custom.commonAction.name)
+        put("activity_package", custom.activityPackage)
+        put("activity_class", custom.activityClass)
+        put("activity_action", custom.activityAction)
+        put("activity_small_window", custom.launchInSmallWindow)
+        put("url_scheme", custom.urlScheme)
+        put("xiaobu_shortcut_id", custom.xiaobuShortcutId)
+        put("shell_command", custom.shellCommand)
+        put("shell_toast_enabled", custom.shellToastEnabled)
+    }
+
+    private fun customFromJson(json: JSONObject?): CustomActionSettings {
+        val value = json ?: JSONObject()
+        val common = enumValue(value.optString("common_action", null), CommonAction.WECHAT_PAY, "common action")
+        return CustomActionSettings(
+            commonAction = common,
+            activityPackage = value.optString("activity_package", ""),
+            activityClass = value.optString("activity_class", ""),
+            activityAction = value.optString("activity_action", ""),
+            launchInSmallWindow = value.optBoolean("activity_small_window", false),
+            urlScheme = value.optString("url_scheme", ""),
+            xiaobuShortcutId = value.optString("xiaobu_shortcut_id", ""),
+            shellCommand = value.optString("shell_command", ""),
+            shellToastEnabled = value.optBoolean("shell_toast_enabled", true)
+        )
+    }
+
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =
         value?.let { runCatching { ActionType.valueOf(it) }.onXposedFailure("parse action").getOrNull() } ?: fallback
-
-    private fun writeCustom(editor: SharedPreferences.Editor, prefix: String, custom: CustomActionSettings) {
-        editor.putString("${prefix}common_action", custom.commonAction.name)
-            .putString("${prefix}activity_package", custom.activityPackage)
-            .putString("${prefix}activity_class", custom.activityClass)
-            .putString("${prefix}activity_action", custom.activityAction)
-            .putBoolean("${prefix}activity_small_window", custom.launchInSmallWindow)
-            .putString("${prefix}url_scheme", custom.urlScheme)
-            .putString("${prefix}xiaobu_shortcut_id", custom.xiaobuShortcutId)
-            .putString("${prefix}shell_command", custom.shellCommand)
-            .putBoolean("${prefix}shell_toast_enabled", custom.shellToastEnabled)
-    }
 
     private fun readCustom(preferences: SharedPreferences, prefix: String): CustomActionSettings {
         val common = preferences.getString("${prefix}common_action", null)
