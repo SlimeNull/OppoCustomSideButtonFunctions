@@ -33,13 +33,13 @@ object SettingsStore {
     const val PREFS_NAME = "settings"
     const val REMOTE_FILE_NAME = "settings.json"
 
-    @Volatile
-    private var remoteService: XposedService? = null
+    private val remoteService: XposedService?
+        get() = XposedServiceManager.xposedService
+
     @Volatile
     private var pendingRemoteSettings: AppSettings? = null
     @Volatile
     private var applicationContext: Context? = null
-    private var remoteBridgeInitialized = false
 
     private const val KEY_ENABLED = "enabled"
     private const val KEY_KEY_CODE = "key_code"
@@ -77,19 +77,6 @@ object SettingsStore {
     @Synchronized
     fun initializeRemoteStorage(context: Context? = null) {
         context?.let { applicationContext = it.applicationContext }
-        if (remoteBridgeInitialized) return
-        remoteBridgeInitialized = true
-        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
-            override fun onServiceBind(service: XposedService) {
-                remoteService = service
-                val pending = pendingRemoteSettings ?: migrateSettingsIfRemoteEmpty(service) ?: return
-                if (writeRemote(service, pending)) pendingRemoteSettings = null
-            }
-
-            override fun onServiceDied(service: XposedService) {
-                if (remoteService === service) remoteService = null
-            }
-        })
     }
 
     fun load(context: Context): AppSettings {
@@ -130,15 +117,22 @@ object SettingsStore {
             output.write(toJson(settings).toString().toByteArray(StandardCharsets.UTF_8))
             output.channel.force(true)
         }
+
+        XposedBridge.log("CustomSideButtonFunctions: remote settings file saved.")
         true
     }.onXposedFailure("save remote settings file").getOrDefault(false)
 
     private fun readRemote(service: XposedService?): AppSettings? {
-        if (service == null) return null
+        if (service == null) {
+            XposedBridge.log("CustomSideButtonFunctions: service not initialized, can not read remote settings")
+            return null
+        }
         return try {
+
             val descriptor = service.openRemoteFile(REMOTE_FILE_NAME)
             if (descriptor.statSize <= 0L) {
                 descriptor.close()
+                XposedBridge.log("CustomSideButtonFunctions: remote settings file is empty.")
                 null
             } else {
                 ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
@@ -146,6 +140,7 @@ object SettingsStore {
                 }
             }
         } catch (_: FileNotFoundException) {
+            XposedBridge.log("CustomSideButtonFunctions: remote settings file not found.")
             null
         } catch (error: Throwable) {
             XposedBridge.log("CustomSideButtonFunctions: load remote settings file failed: ${error.message}")
