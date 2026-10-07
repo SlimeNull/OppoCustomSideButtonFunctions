@@ -10,7 +10,7 @@ import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
-import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /** Xposed entry point for the framework key hook and shortcut editor. */
@@ -24,14 +24,14 @@ class XposedEntry : XposedModule() {
         XposedRuntime.bind(this)
         SettingsReader.bind(this)
         LegacyImeCursorHook.install()
-        SideKeyModule.install(LoadPackageParam("android", param.classLoader))
+        SideKeyModule.install(PackageHookParam("android", param.classLoader))
     }
 
-    override fun onPackageLoaded(param: PackageLoadedParam) {
+    override fun onPackageReady(param: PackageReadyParam) {
         if (param.packageName == "com.coloros.shortcuts") {
             XposedRuntime.bind(this)
             SettingsReader.bind(this)
-            ShortcutsHook.install(LoadPackageParam(param.packageName, param.defaultClassLoader))
+            ShortcutsHook.install(PackageHookParam(param.packageName, param.classLoader))
         }
     }
 }
@@ -57,11 +57,11 @@ private object LegacyImeCursorHook {
         if (installed) return
         installed = true
         runCatching {
-            XposedHelpers.findAndHookMethod(
+            XposedHelpers.hookMethod(
                 "android.inputmethodservice.InputMethodService", null, "onKeyDown",
                 Int::class.javaPrimitiveType!!, KeyEvent::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                object : Hooker() {
+                    override fun beforeHookedMethod(param: HookParam) {
                         val keyCode = param.args.getOrNull(0) as? Int ?: return
                         if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return
                         val event = param.args.getOrNull(1) as? KeyEvent ?: return
@@ -80,11 +80,11 @@ private object LegacyImeCursorHook {
                     }
                 }
             )
-            XposedHelpers.findAndHookMethod(
+            XposedHelpers.hookMethod(
                 "android.inputmethodservice.InputMethodService", null, "onKeyUp",
                 Int::class.javaPrimitiveType!!, KeyEvent::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                object : Hooker() {
+                    override fun beforeHookedMethod(param: HookParam) {
                         val keyCode = param.args.getOrNull(0) as? Int ?: return
                         if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return
                         val handled = finishPress(keyCode)
@@ -201,7 +201,7 @@ internal object SideKeyModule {
     private const val TAG = "CustomSideButtonFunctions"
     private var installed = false
 
-    fun install(lpparam: LoadPackageParam) {
+    fun install(lpparam: PackageHookParam) {
         if (installed) return
         installed = true
 
@@ -218,7 +218,7 @@ internal object SideKeyModule {
     }
 
     private fun installOplusStrategyHook(
-        lpparam: LoadPackageParam,
+        lpparam: PackageHookParam,
         controller: SideKeyController,
         executor: ActionExecutor
     ): Boolean {
@@ -227,7 +227,7 @@ internal object SideKeyModule {
                 "com.android.server.policy.StrategyActionButtonKeyLaunchApp",
                 lpparam.classLoader
             )
-            XposedHelpers.findAndHookMethod(
+            XposedHelpers.hookMethod(
                 strategyClass,
                 "actionInterceptKeyBeforeQueueing",
                 KeyEvent::class.java,
@@ -235,8 +235,8 @@ internal object SideKeyModule {
                 Int::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                object : Hooker() {
+                    override fun beforeHookedMethod(param: HookParam) {
                         val event = param.args[0] as? KeyEvent ?: return
                         val settings = SettingsReader.load()
                         if (!settings.enabled || settings.operationMode == OperationMode.DISABLED) {
@@ -271,7 +271,7 @@ internal object SideKeyModule {
     }
 
     private fun installPhoneWindowHook(
-        lpparam: LoadPackageParam,
+        lpparam: PackageHookParam,
         controller: SideKeyController,
         executor: ActionExecutor
     ): Boolean {
@@ -281,14 +281,14 @@ internal object SideKeyModule {
         )
         for (className in classNames) {
             try {
-                XposedHelpers.findAndHookMethod(
+                XposedHelpers.hookMethod(
                     className,
                     lpparam.classLoader,
                     "interceptKeyBeforeQueueing",
                     KeyEvent::class.java,
                     Int::class.javaPrimitiveType!!,
-                    object : XC_MethodHook() {
-                        override fun beforeHookedMethod(param: MethodHookParam) {
+                    object : Hooker() {
+                        override fun beforeHookedMethod(param: HookParam) {
                             val event = param.args[0] as? KeyEvent ?: return
                             val settings = SettingsReader.load()
                             if (!settings.enabled || settings.operationMode == OperationMode.DISABLED) {

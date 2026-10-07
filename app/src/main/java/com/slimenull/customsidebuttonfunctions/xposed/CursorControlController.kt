@@ -59,28 +59,28 @@ internal class CursorControlController {
     private var pendingCursorDown: KeyEvent? = null
     private var pendingCursorGeneration = 0
 
-    fun install(lpparam: LoadPackageParam) {
+    fun install(lpparam: PackageHookParam) {
         hookPolicy(lpparam)
         hookImeVisibility(lpparam)
         hookMediaVolumePaths(lpparam)
         XposedBridge.log("$TAG: installed volume-key cursor-control hooks")
     }
 
-    private fun hookPolicy(lpparam: LoadPackageParam) {
+    private fun hookPolicy(lpparam: PackageHookParam) {
         val classNames = listOf(
             "com.android.server.policy.PhoneWindowManager",
             "com.android.server.policy.PhoneWindowManagerExt"
         )
         for (className in classNames) {
             if (runCatching {
-                    XposedHelpers.findAndHookMethod(
+                    XposedHelpers.hookMethod(
                         className,
                         lpparam.classLoader,
                         "interceptKeyBeforeQueueing",
                         KeyEvent::class.java,
                         Int::class.javaPrimitiveType!!,
-                        object : XC_MethodHook() {
-                            override fun beforeHookedMethod(param: MethodHookParam) {
+                        object : Hooker() {
+                            override fun beforeHookedMethod(param: HookParam) {
                                 capturePolicyServices(param.thisObject)
                                 val event = param.args.firstOrNull() as? KeyEvent ?: return
                                 if (isReplayedVolumeEvent(event)) return
@@ -106,31 +106,31 @@ internal class CursorControlController {
 
     private fun hookPolicyLifecycle(
         className: String,
-        lpparam: LoadPackageParam
+        lpparam: PackageHookParam
     ) {
         val policyClass = XposedHelpers.findClassIfExists(className, lpparam.classLoader) ?: return
         runCatching {
-            XposedBridge.hookAllMethods(policyClass, "initKeyCombinationRules", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
+            XposedHelpers.hookAllMethods(policyClass, "initKeyCombinationRules", object : Hooker() {
+                override fun afterHookedMethod(param: HookParam) {
                     capturePolicyServices(param.thisObject)
                 }
             })
         }.onXposedFailure("hook $className policy lifecycle")
     }
 
-    private fun hookImeVisibility(lpparam: LoadPackageParam) {
+    private fun hookImeVisibility(lpparam: PackageHookParam) {
         val imeClass = XposedHelpers.findClassIfExists(
             "com.android.server.inputmethod.InputMethodManagerService",
             lpparam.classLoader
         ) ?: return
         runCatching {
-            XposedBridge.hookAllConstructors(imeClass, object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
+            XposedHelpers.hookAllConstructors(imeClass, object : Hooker() {
+                override fun afterHookedMethod(param: HookParam) {
                     inputMethodManagerService = param.thisObject
                 }
             })
-            XposedBridge.hookAllMethods(imeClass, "setImeWindowStatusLocked", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
+            XposedHelpers.hookAllMethods(imeClass, "setImeWindowStatusLocked", object : Hooker() {
+                override fun afterHookedMethod(param: HookParam) {
                     inputMethodManagerService = param.thisObject
                     val visibility = param.args.firstOrNull { it is Int } as? Int ?: return
                     imeWindowVisible = visibility and IME_VISIBLE != 0
@@ -139,7 +139,7 @@ internal class CursorControlController {
         }.onXposedFailure("hook InputMethodManagerService visibility")
     }
 
-    private fun hookMediaVolumePaths(lpparam: LoadPackageParam) {
+    private fun hookMediaVolumePaths(lpparam: PackageHookParam) {
         hookAllMethodsIfPresent(
             "android.media.session.MediaSessionLegacyHelper",
             lpparam.classLoader,
@@ -168,12 +168,12 @@ internal class CursorControlController {
         className: String,
         classLoader: ClassLoader,
         methodName: String,
-        before: (XC_MethodHook.MethodHookParam) -> Unit
+        before: (Hooker.HookParam) -> Unit
     ) {
         val clazz = XposedHelpers.findClassIfExists(className, classLoader) ?: return
         runCatching {
-            XposedBridge.hookAllMethods(clazz, methodName, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) = before(param)
+            XposedHelpers.hookAllMethods(clazz, methodName, object : Hooker() {
+                override fun beforeHookedMethod(param: HookParam) = before(param)
             })
         }.onXposedFailure("hook $className.$methodName")
     }

@@ -16,19 +16,19 @@ internal object ShortcutsHook {
     private val installed = AtomicBoolean(false)
     private var context: Context? = null
 
-    fun install(lpparam: LoadPackageParam) {
+    fun install(lpparam: PackageHookParam) {
         if (lpparam.packageName != PACKAGE || !installed.compareAndSet(false, true)) return
         runCatching {
             val mainActivity = XposedHelpers.findClass(
                 "com.coloros.shortcuts.ui.MainActivity",
                 lpparam.classLoader
             )
-            XposedHelpers.findAndHookMethod(
+            XposedHelpers.hookMethod(
                 mainActivity,
                 "onCreate",
                 Bundle::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
+                object : Hooker() {
+                    override fun afterHookedMethod(param: HookParam) {
                         context = param.thisObject as? Context
                         XposedBridge.log("CustomSideButtonFunctions: shortcuts context captured")
                     }
@@ -40,14 +40,14 @@ internal object ShortcutsHook {
                 lpparam.classLoader
             )
             val ownerClass = XposedHelpers.findClass("k8.a", lpparam.classLoader)
-            XposedHelpers.findAndHookMethod(
+            XposedHelpers.hookMethod(
                 ownerClass,
                 "i",
                 shortcutClass,
                 Boolean::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
+                object : Hooker() {
+                    override fun beforeHookedMethod(param: HookParam) {
                         val shortcut = param.args[0] ?: return
                         runCatching {
                             val tag = XposedHelpers.getObjectField(shortcut, "tag") as? String

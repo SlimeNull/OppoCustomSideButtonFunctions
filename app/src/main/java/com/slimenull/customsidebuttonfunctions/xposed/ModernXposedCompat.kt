@@ -7,7 +7,7 @@ import java.lang.reflect.Executable
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
-/** Runtime state shared by the modern API entry point and the small legacy-shaped adapters. */
+/** Runtime state shared by the LibXposed 102 entry point and hook helpers. */
 internal object XposedRuntime {
     @Volatile
     var api: XposedInterface? = null
@@ -27,22 +27,18 @@ internal object XposedRuntime {
     }
 }
 
-/** Compatibility-shaped logger used by the existing module code. */
+/** Logger backed by the LibXposed 102 interface. */
 internal object XposedBridge {
     fun log(message: String) = XposedRuntime.log(Log.INFO, message)
     fun log(error: Throwable) = XposedRuntime.log(Log.ERROR, error.message ?: error.javaClass.name, error)
-    fun hookAllMethods(clazz: Class<*>, methodName: String, callback: XC_MethodHook) =
-        XposedHelpers.hookAllMethods(clazz, methodName, callback)
-    fun hookAllConstructors(clazz: Class<*>, callback: XC_MethodHook) =
-        XposedHelpers.hookAllConstructors(clazz, callback)
 }
 
-/** Minimal callback adapter so existing hook bodies can migrate incrementally to API 102. */
-abstract class XC_MethodHook {
-    open fun beforeHookedMethod(param: MethodHookParam) = Unit
-    open fun afterHookedMethod(param: MethodHookParam) = Unit
+/** Small Kotlin callback facade over the LibXposed 102 interceptor chain. */
+abstract class Hooker {
+    open fun beforeHookedMethod(param: HookParam) = Unit
+    open fun afterHookedMethod(param: HookParam) = Unit
 
-    class MethodHookParam internal constructor(private val chain: XposedInterface.Chain) {
+    class HookParam internal constructor(private val chain: XposedInterface.Chain) {
         val method: Executable get() = chain.executable
         val thisObject: Any get() = chain.thisObject!!
         val args: Array<Any?> = chain.args.toTypedArray()
@@ -55,7 +51,7 @@ abstract class XC_MethodHook {
             result = value
         }
 
-        internal fun invoke(hook: XC_MethodHook): Any? {
+        internal fun invoke(hook: Hooker): Any? {
             hook.beforeHookedMethod(this)
             if (!hasResult) result = chain.proceed()
             hook.afterHookedMethod(this)
@@ -64,7 +60,7 @@ abstract class XC_MethodHook {
     }
 }
 
-/** Reflection helpers that retain the old call sites while all hooks are registered through API 102. */
+/** Reflection lookup helpers; registration itself uses XposedInterface.hook. */
 internal object XposedHelpers {
     fun findClass(name: String, classLoader: ClassLoader?): Class<*> = Class.forName(name, false, classLoader)
 
@@ -74,29 +70,29 @@ internal object XposedHelpers {
         null
     }
 
-    fun findAndHookMethod(
+    fun hookMethod(
         className: String,
         classLoader: ClassLoader?,
         methodName: String,
         vararg parameterTypesAndCallback: Any
-    ) = findAndHookMethod(findClass(className, classLoader), methodName, *parameterTypesAndCallback)
+    ) = hookMethod(findClass(className, classLoader), methodName, *parameterTypesAndCallback)
 
-    fun findAndHookMethod(
+    fun hookMethod(
         clazz: Class<*>,
         methodName: String,
         vararg parameterTypesAndCallback: Any
     ) {
-        val callback = parameterTypesAndCallback.last() as XC_MethodHook
+        val callback = parameterTypesAndCallback.last() as Hooker
         val parameterTypes = parameterTypesAndCallback.dropLast(1).map { it as Class<*> }.toTypedArray()
         val method = findMethod(clazz, methodName, parameterTypes)
         hook(method, callback)
     }
 
-    fun hookAllMethods(clazz: Class<*>, methodName: String, callback: XC_MethodHook) {
+    fun hookAllMethods(clazz: Class<*>, methodName: String, callback: Hooker) {
         allMethods(clazz, methodName).forEach { hook(it, callback) }
     }
 
-    fun hookAllConstructors(clazz: Class<*>, callback: XC_MethodHook) {
+    fun hookAllConstructors(clazz: Class<*>, callback: Hooker) {
         clazz.declaredConstructors.forEach { hook(it, callback) }
     }
 
@@ -112,11 +108,11 @@ internal object XposedHelpers {
         return method.invoke(instance, *args) ?: Unit
     }
 
-    private fun hook(executable: Executable, callback: XC_MethodHook) {
+    private fun hook(executable: Executable, callback: Hooker) {
         val api = XposedRuntime.api ?: error("Xposed API is not bound")
         api.hook(executable)
             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-            .intercept { chain -> XC_MethodHook.MethodHookParam(chain).invoke(callback) }
+            .intercept { chain -> Hooker.HookParam(chain).invoke(callback) }
     }
 
     private fun findMethod(clazz: Class<*>, name: String, parameterTypes: Array<Class<*>>): Method =
@@ -159,7 +155,7 @@ internal object XposedHelpers {
     }
 }
 
-internal data class LoadPackageParam(
+internal data class PackageHookParam(
     val packageName: String,
     val classLoader: ClassLoader
 )
