@@ -22,7 +22,6 @@ import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
 import com.slimenull.customsidebuttonfunctions.model.SideKeyCombinationAction
 import io.github.libxposed.service.XposedService
-import io.github.libxposed.service.XposedServiceHelper
 import java.io.FileNotFoundException
 import java.nio.charset.StandardCharsets
 import org.json.JSONArray
@@ -40,6 +39,8 @@ object SettingsStore {
     private var pendingRemoteSettings: AppSettings? = null
     @Volatile
     private var applicationContext: Context? = null
+    @Volatile
+    private var remoteSyncInitialized = false
 
     private const val KEY_ENABLED = "enabled"
     private const val KEY_KEY_CODE = "key_code"
@@ -77,30 +78,63 @@ object SettingsStore {
     @Synchronized
     fun initializeRemoteStorage(context: Context? = null) {
         context?.let { applicationContext = it.applicationContext }
+        if (remoteSyncInitialized) return
+        remoteSyncInitialized = true
+        XposedServiceManager.registerBindListener { service ->
+            val context = applicationContext ?: return@registerBindListener
+            val localPreferences = preferences(context)
+            val settings = pendingRemoteSettings
+                ?: if (localPreferences.all.isNotEmpty()) {
+                    fromPreferences(localPreferences)
+                } else {
+                    migrateEmptyLocalSettings(service, context)
+                }
+                ?: return@registerBindListener
+            if (pendingRemoteSettings != null) writeLocal(context, settings)
+            if (writeRemote(service, settings)) pendingRemoteSettings = null
+        }
     }
 
     fun load(context: Context): AppSettings {
         initializeRemoteStorage(context)
-        return readRemote(remoteService) ?: fromPreferences(preferences(context))
+        val localPreferences = preferences(context)
+        val settings = fromPreferences(localPreferences)
+        if (localPreferences.all.isNotEmpty() || remoteService != null) {
+            if (!writeLocal(context, settings) || !writeRemote(settings)) {
+                pendingRemoteSettings = settings
+            } else {
+                pendingRemoteSettings = null
+            }
+        }
+        return settings
     }
 
     fun save(settings: AppSettings) {
         initializeRemoteStorage()
-        if (!writeRemote(settings)) pendingRemoteSettings = settings
+        val context = applicationContext
+        if (context == null || !writeLocal(context, settings)) {
+            pendingRemoteSettings = settings
+            return
+        }
+        if (writeRemote(settings)) pendingRemoteSettings = null else pendingRemoteSettings = settings
     }
 
-    private fun migrateSettingsIfRemoteEmpty(service: XposedService): AppSettings? {
+    private fun migrateEmptyLocalSettings(service: XposedService, context: Context): AppSettings? {
         return try {
-            if (readRemote(service) != null) return null
+            readRemote(service)?.let { settings ->
+                writeLocal(context, settings)
+                return settings
+            }
 
             // Preserve settings written by the previous 102 preference implementation.
             val oldRemote = runCatching { service.getRemotePreferences(PREFS_NAME) }
                 .onXposedFailure("read legacy remote preferences")
                 .getOrNull()
-            if (oldRemote?.all?.isNotEmpty() == true) return fromPreferences(oldRemote)
+            if (oldRemote?.all?.isNotEmpty() == true) {
+                return fromPreferences(oldRemote).also { writeLocal(context, it) }
+            }
 
-            val context = applicationContext ?: return null
-            fromPreferences(preferences(context))
+            fromPreferences(preferences(context)).also { writeLocal(context, it) }
         } catch (error: Throwable) {
             XposedBridge.log("CustomSideButtonFunctions: migrate existing settings failed: ${error.message}")
             XposedBridge.log(error)
@@ -152,6 +186,46 @@ object SettingsStore {
     private fun preferences(context: Context): SharedPreferences = context
         .createDeviceProtectedStorageContext()
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun writeLocal(context: Context, settings: AppSettings): Boolean = runCatching {
+        preferences(context).edit()
+            .putBoolean(KEY_ENABLED, settings.enabled)
+            .putInt(KEY_KEY_CODE, settings.keyCode)
+            .putString(KEY_INPUT_PATH, settings.inputDevicePath)
+            .putLong(KEY_LONG_PRESS_MS, settings.longPressMs)
+            .putLong(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
+            .putString(KEY_SINGLE_ACTION, settings.singleAction.name)
+            .putBoolean(KEY_SINGLE_WAKE_SCREEN, settings.singleWakeScreen)
+            .putString(KEY_DOUBLE_ACTION, settings.doubleAction.name)
+            .putBoolean(KEY_DOUBLE_WAKE_SCREEN, settings.doubleWakeScreen)
+            .putString(KEY_LONG_ACTION, settings.longAction.name)
+            .putBoolean(KEY_LONG_WAKE_SCREEN, settings.longWakeScreen)
+            .putString(KEY_OPERATION_MODE, settings.operationMode.name)
+            .putLong(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
+            .putLong(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
+            .putBoolean(KEY_MORSE_PRESS_VIBRATION, settings.morsePressVibrationEnabled)
+            .putBoolean(KEY_MORSE_LONG_VIBRATION, settings.morseLongVibrationEnabled)
+            .putBoolean(KEY_MORSE_IMMEDIATE_EXECUTION, settings.morseImmediateExecutionEnabled)
+            .putString(KEY_MORSE_BINDINGS, writeMorseBindings(settings.morseBindings))
+            .also { writeCustom(it, "single_", settings.singleCustom) }
+            .also { writeCustom(it, "double_", settings.doubleCustom) }
+            .also { writeCustom(it, "long_", settings.longCustom) }
+            .putBoolean(KEY_VIBRATION_ENABLED, settings.vibrationEnabled)
+            .putBoolean(KEY_TOAST_ENABLED, settings.toastEnabled)
+            .putString(KEY_TOAST_TEXT, settings.toastText)
+            .putBoolean(KEY_UNKNOWN_MORSE_FEEDBACK, settings.unknownMorseFeedbackEnabled)
+            .putString(KEY_UNKNOWN_MORSE_TOAST_TEXT, settings.unknownMorseToastText)
+            .putBoolean(KEY_WAKE_SCREEN, settings.wakeScreenWhenOff)
+            .putString(KEY_CURSOR_CONTROL_MODE, settings.cursorControlMode.name)
+            .putString(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
+            .putLong(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
+            .putLong(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
+            .putBoolean(KEY_COMBINATION_ENABLED, settings.combinationEnabled)
+            .putString(KEY_SIDE_VOLUME_UP_ACTION, settings.sideVolumeUpAction.name)
+            .putString(KEY_SIDE_VOLUME_DOWN_ACTION, settings.sideVolumeDownAction.name)
+            .putString(KEY_SIDE_POWER_ACTION, settings.sidePowerAction.name)
+            .commit()
+    }.onXposedFailure("save local settings").getOrDefault(false)
 
     fun fromPreferences(preferences: SharedPreferences): AppSettings = AppSettings(
         enabled = preferences.getBoolean(KEY_ENABLED, true),
@@ -366,6 +440,18 @@ object SettingsStore {
 
     private fun action(value: String?, fallback: ActionType = ActionType.CYCLE_RINGER): ActionType =
         value?.let { runCatching { ActionType.valueOf(it) }.onXposedFailure("parse action").getOrNull() } ?: fallback
+
+    private fun writeCustom(editor: SharedPreferences.Editor, prefix: String, custom: CustomActionSettings) {
+        editor.putString("${prefix}common_action", custom.commonAction.name)
+            .putString("${prefix}activity_package", custom.activityPackage)
+            .putString("${prefix}activity_class", custom.activityClass)
+            .putString("${prefix}activity_action", custom.activityAction)
+            .putBoolean("${prefix}activity_small_window", custom.launchInSmallWindow)
+            .putString("${prefix}url_scheme", custom.urlScheme)
+            .putString("${prefix}xiaobu_shortcut_id", custom.xiaobuShortcutId)
+            .putString("${prefix}shell_command", custom.shellCommand)
+            .putBoolean("${prefix}shell_toast_enabled", custom.shellToastEnabled)
+    }
 
     private fun readCustom(preferences: SharedPreferences, prefix: String): CustomActionSettings {
         val common = preferences.getString("${prefix}common_action", null)
