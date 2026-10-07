@@ -129,9 +129,10 @@ internal class SideKeyController {
                                 activeSettings.longAction,
                                 activeSettings.longCustom,
                                 activeSettings,
-                                executor,
-                                activeInteractive,
-                                activeSettings.longWakeScreen
+                            executor,
+                            activeInteractive,
+                            activeSettings.longWakeScreen,
+                            activeSettings.vibrationEnabled || activeSettings.longVibrationEnabled
                             )
                         }
                     }
@@ -177,7 +178,8 @@ internal class SideKeyController {
                     activeSettings,
                     executor,
                     activeInteractive,
-                    activeSettings.longWakeScreen
+                    activeSettings.longWakeScreen,
+                    activeSettings.vibrationEnabled || activeSettings.longVibrationEnabled
                 )
                 return
             }
@@ -193,7 +195,8 @@ internal class SideKeyController {
                     activeSettings,
                     executor,
                     activeInteractive,
-                    activeSettings.doubleWakeScreen
+                    activeSettings.doubleWakeScreen,
+                    activeSettings.vibrationEnabled || activeSettings.doubleVibrationEnabled
                 )
                 return
             }
@@ -204,7 +207,8 @@ internal class SideKeyController {
                     activeSettings,
                     executor,
                     activeInteractive,
-                    activeSettings.singleWakeScreen
+                    activeSettings.singleWakeScreen,
+                    activeSettings.vibrationEnabled || activeSettings.singleVibrationEnabled
                 )
                 return
             }
@@ -221,7 +225,8 @@ internal class SideKeyController {
                                 activeSettings,
                                 executor,
                                 activeInteractive,
-                                activeSettings.singleWakeScreen
+                                activeSettings.singleWakeScreen,
+                                activeSettings.vibrationEnabled || activeSettings.singleVibrationEnabled
                             )
                         }
                     }
@@ -279,7 +284,15 @@ internal class SideKeyController {
                             morseSequence.clear()
                             morseFinishRunnable?.let(handler::removeCallbacks)
                             morseFinishRunnable = null
-                            execute(binding.action, binding.custom, current, executor, activeInteractive, binding.wakeScreen)
+                            execute(
+                                binding.action,
+                                binding.custom,
+                                current,
+                                executor,
+                                activeInteractive,
+                                binding.wakeScreen,
+                                current.vibrationEnabled || binding.vibrationEnabled
+                            )
                             return@synchronized
                         }
                             if (activeSettings.morseLongVibrationEnabled) executor.vibrateInstantCue()
@@ -351,7 +364,15 @@ internal class SideKeyController {
             executor.notifyUnknownMorseSequence(settings)
             return
         }
-        execute(binding.action, binding.custom, settings, executor, activeInteractive, binding.wakeScreen)
+        execute(
+            binding.action,
+            binding.custom,
+            settings,
+            executor,
+            activeInteractive,
+            binding.wakeScreen,
+            settings.vibrationEnabled || binding.vibrationEnabled
+        )
     }
 
     private fun resetMorseState() {
@@ -370,8 +391,11 @@ internal class SideKeyController {
         settings: AppSettings,
         executor: ActionExecutor,
         interactive: Boolean,
-        wakeScreen: Boolean
+        wakeScreen: Boolean,
+        vibrationEnabled: Boolean
     ) {
-        if (action != ActionType.NONE) executor.execute(action, custom, settings, interactive, wakeScreen)
+        if (action != ActionType.NONE) {
+            executor.execute(action, custom, settings, interactive, wakeScreen, vibrationEnabled)
+        }
     }
 }

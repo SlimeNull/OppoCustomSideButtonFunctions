@@ -49,10 +49,13 @@ object SettingsStore {
     private const val KEY_DOUBLE_WINDOW_MS = "double_click_window_ms"
     private const val KEY_SINGLE_ACTION = "single_action"
     private const val KEY_SINGLE_WAKE_SCREEN = "single_wake_screen"
+    private const val KEY_SINGLE_VIBRATION = "single_vibration_enabled"
     private const val KEY_DOUBLE_ACTION = "double_action"
     private const val KEY_DOUBLE_WAKE_SCREEN = "double_wake_screen"
+    private const val KEY_DOUBLE_VIBRATION = "double_vibration_enabled"
     private const val KEY_LONG_ACTION = "long_action"
     private const val KEY_LONG_WAKE_SCREEN = "long_wake_screen"
+    private const val KEY_LONG_VIBRATION = "long_vibration_enabled"
     private const val KEY_OPERATION_MODE = "operation_mode"
     private const val KEY_MORSE_LONG_PRESS_MS = "morse_long_press_ms"
     private const val KEY_MORSE_COMMAND_WINDOW_MS = "morse_command_window_ms"
@@ -196,10 +199,13 @@ object SettingsStore {
             .putLong(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
             .putString(KEY_SINGLE_ACTION, settings.singleAction.name)
             .putBoolean(KEY_SINGLE_WAKE_SCREEN, settings.singleWakeScreen)
+            .putBoolean(KEY_SINGLE_VIBRATION, settings.singleVibrationEnabled)
             .putString(KEY_DOUBLE_ACTION, settings.doubleAction.name)
             .putBoolean(KEY_DOUBLE_WAKE_SCREEN, settings.doubleWakeScreen)
+            .putBoolean(KEY_DOUBLE_VIBRATION, settings.doubleVibrationEnabled)
             .putString(KEY_LONG_ACTION, settings.longAction.name)
             .putBoolean(KEY_LONG_WAKE_SCREEN, settings.longWakeScreen)
+            .putBoolean(KEY_LONG_VIBRATION, settings.longVibrationEnabled)
             .putString(KEY_OPERATION_MODE, settings.operationMode.name)
             .putLong(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
             .putLong(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
@@ -238,16 +244,19 @@ object SettingsStore {
             KEY_SINGLE_WAKE_SCREEN,
             preferences.getString(KEY_SINGLE_ACTION, null)?.let { it == ActionType.CYCLE_RINGER.name } ?: true
         ),
+        singleVibrationEnabled = preferences.getBoolean(KEY_SINGLE_VIBRATION, false),
         doubleAction = action(preferences.getString(KEY_DOUBLE_ACTION, null), ActionType.NONE),
         doubleWakeScreen = preferences.getBoolean(
             KEY_DOUBLE_WAKE_SCREEN,
             preferences.getString(KEY_DOUBLE_ACTION, null) == ActionType.CYCLE_RINGER.name
         ),
+        doubleVibrationEnabled = preferences.getBoolean(KEY_DOUBLE_VIBRATION, false),
         longAction = action(preferences.getString(KEY_LONG_ACTION, null), ActionType.SCREENSHOT),
         longWakeScreen = preferences.getBoolean(
             KEY_LONG_WAKE_SCREEN,
             preferences.getString(KEY_LONG_ACTION, null) == ActionType.CYCLE_RINGER.name
         ),
+        longVibrationEnabled = preferences.getBoolean(KEY_LONG_VIBRATION, false),
         operationMode = preferences.getString(KEY_OPERATION_MODE, null)
             ?.let { runCatching { OperationMode.valueOf(it) }.onXposedFailure("parse operation mode").getOrNull() }
             ?: OperationMode.SIMPLE,
@@ -308,10 +317,13 @@ object SettingsStore {
         put(KEY_DOUBLE_WINDOW_MS, settings.doubleClickWindowMs)
         put(KEY_SINGLE_ACTION, settings.singleAction.name)
         put(KEY_SINGLE_WAKE_SCREEN, settings.singleWakeScreen)
+        put(KEY_SINGLE_VIBRATION, settings.singleVibrationEnabled)
         put(KEY_DOUBLE_ACTION, settings.doubleAction.name)
         put(KEY_DOUBLE_WAKE_SCREEN, settings.doubleWakeScreen)
+        put(KEY_DOUBLE_VIBRATION, settings.doubleVibrationEnabled)
         put(KEY_LONG_ACTION, settings.longAction.name)
         put(KEY_LONG_WAKE_SCREEN, settings.longWakeScreen)
+        put(KEY_LONG_VIBRATION, settings.longVibrationEnabled)
         put(KEY_OPERATION_MODE, settings.operationMode.name)
         put(KEY_MORSE_LONG_PRESS_MS, settings.morseLongPressMs)
         put(KEY_MORSE_COMMAND_WINDOW_MS, settings.morseCommandWindowMs)
@@ -350,16 +362,19 @@ object SettingsStore {
             KEY_SINGLE_WAKE_SCREEN,
             optionalString(json, KEY_SINGLE_ACTION)?.let { it == ActionType.CYCLE_RINGER.name } ?: true
         ),
+        singleVibrationEnabled = json.optBoolean(KEY_SINGLE_VIBRATION, false),
         doubleAction = action(optionalString(json, KEY_DOUBLE_ACTION), ActionType.NONE),
         doubleWakeScreen = json.optBoolean(
             KEY_DOUBLE_WAKE_SCREEN,
             optionalString(json, KEY_DOUBLE_ACTION) == ActionType.CYCLE_RINGER.name
         ),
+        doubleVibrationEnabled = json.optBoolean(KEY_DOUBLE_VIBRATION, false),
         longAction = action(optionalString(json, KEY_LONG_ACTION), ActionType.SCREENSHOT),
         longWakeScreen = json.optBoolean(
             KEY_LONG_WAKE_SCREEN,
             optionalString(json, KEY_LONG_ACTION) == ActionType.CYCLE_RINGER.name
         ),
+        longVibrationEnabled = json.optBoolean(KEY_LONG_VIBRATION, false),
         operationMode = enumValue(optionalString(json, KEY_OPERATION_MODE), OperationMode.SIMPLE, "operation mode"),
         morseLongPressMs = json.optLong(KEY_MORSE_LONG_PRESS_MS, 300L).coerceIn(100L, 800L),
         morseCommandWindowMs = json.optLong(KEY_MORSE_COMMAND_WINDOW_MS, 300L).coerceIn(100L, 800L),
@@ -487,6 +502,7 @@ object SettingsStore {
                     put("shell_toast_enabled", binding.custom.shellToastEnabled)
                 })
                 put("wake_screen", binding.wakeScreen)
+                put("vibration_enabled", binding.vibrationEnabled)
             })
         }
     }.toString()
@@ -522,7 +538,8 @@ object SettingsStore {
                     shellCommand = custom.optString("shell_command"),
                     shellToastEnabled = custom.optBoolean("shell_toast_enabled", true)
                 ),
-                wakeScreen = entry.optBoolean("wake_screen", action == ActionType.CYCLE_RINGER)
+                wakeScreen = entry.optBoolean("wake_screen", action == ActionType.CYCLE_RINGER),
+                vibrationEnabled = entry.optBoolean("vibration_enabled", false)
             )
         }.distinctBy { it.sequence }
     }

@@ -126,7 +126,8 @@ internal class ActionExecutor {
         custom: CustomActionSettings,
         settings: AppSettings,
         interactive: Boolean = true,
-        wakeScreen: Boolean = false
+        wakeScreen: Boolean = false,
+        vibrationEnabled: Boolean = settings.vibrationEnabled
     ) {
         XposedBridge.log("CustomSideButtonFunctions: executing action=$action")
         val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
@@ -152,7 +153,7 @@ internal class ActionExecutor {
                 ActionType.SHELL_COMMAND -> executeShell(custom.shellCommand, custom.shellToastEnabled)
                 ActionType.NONE -> return
             }
-            feedback(currentContext, action, settings, cycleMode)
+            feedback(currentContext, action, settings, cycleMode, vibrationEnabled)
         }.onXposedFailure("execute action")
     }
 
@@ -670,8 +671,14 @@ internal class ActionExecutor {
         }
     }
 
-    private fun feedback(context: Context, action: ActionType, settings: AppSettings, cycleMode: Int?) {
-        if (settings.vibrationEnabled) {
+    private fun feedback(
+        context: Context,
+        action: ActionType,
+        settings: AppSettings,
+        cycleMode: Int?,
+        vibrationEnabled: Boolean
+    ) {
+        if (vibrationEnabled) {
             if (action == ActionType.CYCLE_RINGER && cycleMode != null) {
                 vibrateRingerMode(context, cycleMode)
             } else {

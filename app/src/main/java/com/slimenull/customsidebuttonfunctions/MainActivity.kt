@@ -689,6 +689,7 @@ private fun GestureScreen(
     val currentAction = selectedAction(kind, settings)
     val currentCustom = selectedCustom(kind, settings)
     val currentWakeScreen = selectedWakeScreen(kind, settings)
+    val currentVibration = selectedVibration(kind, settings)
     Column(Modifier.fillMaxSize().padding(padding)) {
         BackTitle(kind.title, back)
         LazyColumn(
@@ -777,6 +778,12 @@ private fun GestureScreen(
                 Column(Modifier.padding(14.dp)) {
                     SettingSwitchRow("执行时亮屏", currentWakeScreen) {
                         persist(updateWakeScreen(kind, settings, it))
+                    }
+                    if (!settings.vibrationEnabled) {
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFEAF0F7))
+                        SettingSwitchRow("触发时振动", currentVibration) {
+                            persist(updateVibration(kind, settings, it))
+                        }
                     }
                 }
             }
@@ -880,6 +887,7 @@ private fun MorseScreen(
         MorseBindingEditorDialog(
             original = editing,
             existing = settings.morseBindings,
+            globalVibrationEnabled = settings.vibrationEnabled,
             onDismiss = { editorOpen = false },
             onSave = { binding ->
                 val index = settings.morseBindings.indexOfFirst { it.sequence == editing?.sequence }
@@ -954,6 +962,7 @@ private fun morseSequenceTitle(sequence: String): String =
 private fun MorseBindingEditorDialog(
     original: MorseBinding?,
     existing: List<MorseBinding>,
+    globalVibrationEnabled: Boolean,
     onDismiss: () -> Unit,
     onSave: (MorseBinding) -> Unit
 ) {
@@ -963,6 +972,7 @@ private fun MorseBindingEditorDialog(
     var wakeScreen by remember(original) {
         mutableStateOf(original?.wakeScreen ?: (action == ActionType.CYCLE_RINGER))
     }
+    var vibrationEnabled by remember(original) { mutableStateOf(original?.vibrationEnabled ?: false) }
     var showError by remember(original) { mutableStateOf(false) }
     val error = when {
         sequence.isEmpty() -> "请输入指令序列"
@@ -1009,6 +1019,7 @@ private fun MorseBindingEditorDialog(
                 ActionPicker(selected, morseActionChoices) { choice ->
                     action = choice.action
                     wakeScreen = choice.action == ActionType.CYCLE_RINGER
+                    vibrationEnabled = false
                     if (choice.common != null) custom = custom.copy(commonAction = choice.common)
                 }
                 if (action in listOf(ActionType.XIAOBU_SHORTCUT, ActionType.CUSTOM_ACTIVITY,
@@ -1019,13 +1030,17 @@ private fun MorseBindingEditorDialog(
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
                         SettingSwitchRow("执行时亮屏", wakeScreen) { wakeScreen = it }
+                        if (!globalVibrationEnabled) {
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFEAF0F7))
+                            SettingSwitchRow("触发时振动", vibrationEnabled) { vibrationEnabled = it }
+                        }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("取消") }
                     Button(onClick = {
                         showError = true
-                        if (error == null) onSave(MorseBinding(sequence, action, custom, wakeScreen))
+                        if (error == null) onSave(MorseBinding(sequence, action, custom, wakeScreen, vibrationEnabled))
                     }) { Text("保存") }
                 }
             }
@@ -1811,16 +1826,28 @@ private fun selectedWakeScreen(kind: GestureKind, settings: AppSettings): Boolea
     GestureKind.LONG -> settings.longWakeScreen
 }
 
+private fun selectedVibration(kind: GestureKind, settings: AppSettings): Boolean = when (kind) {
+    GestureKind.SINGLE -> settings.singleVibrationEnabled
+    GestureKind.DOUBLE -> settings.doubleVibrationEnabled
+    GestureKind.LONG -> settings.longVibrationEnabled
+}
+
 private fun updateAction(kind: GestureKind, settings: AppSettings, action: ActionType): AppSettings = when (kind) {
-    GestureKind.SINGLE -> settings.copy(singleAction = action, singleWakeScreen = action == ActionType.CYCLE_RINGER)
-    GestureKind.DOUBLE -> settings.copy(doubleAction = action, doubleWakeScreen = action == ActionType.CYCLE_RINGER)
-    GestureKind.LONG -> settings.copy(longAction = action, longWakeScreen = action == ActionType.CYCLE_RINGER)
+    GestureKind.SINGLE -> settings.copy(singleAction = action, singleWakeScreen = action == ActionType.CYCLE_RINGER, singleVibrationEnabled = false)
+    GestureKind.DOUBLE -> settings.copy(doubleAction = action, doubleWakeScreen = action == ActionType.CYCLE_RINGER, doubleVibrationEnabled = false)
+    GestureKind.LONG -> settings.copy(longAction = action, longWakeScreen = action == ActionType.CYCLE_RINGER, longVibrationEnabled = false)
 }
 
 private fun updateWakeScreen(kind: GestureKind, settings: AppSettings, enabled: Boolean): AppSettings = when (kind) {
     GestureKind.SINGLE -> settings.copy(singleWakeScreen = enabled)
     GestureKind.DOUBLE -> settings.copy(doubleWakeScreen = enabled)
     GestureKind.LONG -> settings.copy(longWakeScreen = enabled)
+}
+
+private fun updateVibration(kind: GestureKind, settings: AppSettings, enabled: Boolean): AppSettings = when (kind) {
+    GestureKind.SINGLE -> settings.copy(singleVibrationEnabled = enabled)
+    GestureKind.DOUBLE -> settings.copy(doubleVibrationEnabled = enabled)
+    GestureKind.LONG -> settings.copy(longVibrationEnabled = enabled)
 }
 
 private fun updateCustom(kind: GestureKind, settings: AppSettings, custom: CustomActionSettings): AppSettings = when (kind) {
