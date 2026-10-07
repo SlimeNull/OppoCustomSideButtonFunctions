@@ -143,6 +143,7 @@ import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_LONG_PRESS_MS
 import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_REPEAT_INTERVAL_MS
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
+import com.slimenull.customsidebuttonfunctions.model.SideKeyCombinationAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 
@@ -1070,6 +1071,33 @@ private fun OtherScreen(settings: AppSettings, persist: (AppSettings) -> Unit, p
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item { SectionLabel("组合键") }
+            item {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingSwitchRow(
+                            title = "启用组合键",
+                            checked = settings.combinationEnabled,
+                            onCheckedChange = { persist(settings.copy(combinationEnabled = it)) }
+                        )
+                        if (settings.combinationEnabled) {
+                            HorizontalDivider(color = Color(0xFFEAF0F7))
+                            SideKeyCombinationPicker("侧键+上键", settings.sideVolumeUpAction) {
+                                persist(settings.copy(sideVolumeUpAction = it))
+                            }
+                            SideKeyCombinationPicker("侧键+下键", settings.sideVolumeDownAction) {
+                                persist(settings.copy(sideVolumeDownAction = it))
+                            }
+                            SideKeyCombinationPicker("侧键+电源键", settings.sidePowerAction) {
+                                persist(settings.copy(sidePowerAction = it))
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                InfoCard("组合键会在侧键按住期间接管已配置的音量键或电源键事件。")
+            }
             item { SectionLabel("输入法光标") }
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -1138,6 +1166,56 @@ private fun OtherScreen(settings: AppSettings, persist: (AppSettings) -> Unit, p
             }
             item {
                 InfoCard("设备亮屏、未锁屏、未通话且输入法窗口可见时接管音量键；隐藏输入法后恢复普通音量调节。")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SideKeyCombinationPicker(
+    title: String,
+    selected: SideKeyCombinationAction,
+    onSelect: (SideKeyCombinationAction) -> Unit
+) {
+    val view = LocalView.current
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { clickSound(view); expanded = it },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            Modifier.fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .background(Color(0xFFF3F7FC), RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(selected.title, style = MaterialTheme.typography.bodySmall, color = AppMuted)
+                }
+                Icon(Icons.Default.ExpandMore, contentDescription = "选择组合键动作", tint = AppMuted)
+            }
+        }
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            SideKeyCombinationAction.entries.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(action.title) },
+                    trailingIcon = if (action == selected) {
+                        { Icon(Icons.Default.CheckCircle, contentDescription = "已选择", tint = AppBlue) }
+                    } else null,
+                    onClick = {
+                        clickSound(view)
+                        expanded = false
+                        onSelect(action)
+                    }
+                )
             }
         }
     }

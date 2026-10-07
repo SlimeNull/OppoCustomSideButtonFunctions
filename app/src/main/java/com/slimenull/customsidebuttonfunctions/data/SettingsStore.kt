@@ -20,6 +20,7 @@ import com.slimenull.customsidebuttonfunctions.model.MIN_CURSOR_REPEAT_INTERVAL_
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
 import com.slimenull.customsidebuttonfunctions.model.MorseBinding
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
+import com.slimenull.customsidebuttonfunctions.model.SideKeyCombinationAction
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.io.FileNotFoundException
@@ -68,6 +69,10 @@ object SettingsStore {
     private const val KEY_CURSOR_LONG_PRESS_ACTION = "cursor_long_press_action"
     private const val KEY_CURSOR_LONG_PRESS_MS = "cursor_long_press_ms"
     private const val KEY_CURSOR_REPEAT_INTERVAL_MS = "cursor_repeat_interval_ms"
+    private const val KEY_COMBINATION_ENABLED = "combination_enabled"
+    private const val KEY_SIDE_VOLUME_UP_ACTION = "side_volume_up_action"
+    private const val KEY_SIDE_VOLUME_DOWN_ACTION = "side_volume_down_action"
+    private const val KEY_SIDE_POWER_ACTION = "side_power_action"
 
     @Synchronized
     fun initializeRemoteStorage(context: Context? = null) {
@@ -206,7 +211,23 @@ object SettingsStore {
         cursorLongPressMs = preferences.getLong(KEY_CURSOR_LONG_PRESS_MS, DEFAULT_CURSOR_LONG_PRESS_MS)
             .coerceIn(MIN_CURSOR_LONG_PRESS_MS, MAX_CURSOR_LONG_PRESS_MS),
         cursorRepeatIntervalMs = preferences.getLong(KEY_CURSOR_REPEAT_INTERVAL_MS, DEFAULT_CURSOR_REPEAT_INTERVAL_MS)
-            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS)
+            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS),
+        combinationEnabled = preferences.getBoolean(KEY_COMBINATION_ENABLED, false),
+        sideVolumeUpAction = enumValue(
+            preferences.getString(KEY_SIDE_VOLUME_UP_ACTION, null),
+            SideKeyCombinationAction.NONE,
+            "side volume-up combination action"
+        ),
+        sideVolumeDownAction = enumValue(
+            preferences.getString(KEY_SIDE_VOLUME_DOWN_ACTION, null),
+            SideKeyCombinationAction.NONE,
+            "side volume-down combination action"
+        ),
+        sidePowerAction = enumValue(
+            preferences.getString(KEY_SIDE_POWER_ACTION, null),
+            SideKeyCombinationAction.NONE,
+            "side power combination action"
+        )
     )
 
     /** Serialize the complete settings snapshot used by the LibXposed remote-file bridge. */
@@ -242,6 +263,10 @@ object SettingsStore {
         put(KEY_CURSOR_LONG_PRESS_ACTION, settings.cursorLongPressAction.name)
         put(KEY_CURSOR_LONG_PRESS_MS, settings.cursorLongPressMs)
         put(KEY_CURSOR_REPEAT_INTERVAL_MS, settings.cursorRepeatIntervalMs)
+        put(KEY_COMBINATION_ENABLED, settings.combinationEnabled)
+        put(KEY_SIDE_VOLUME_UP_ACTION, settings.sideVolumeUpAction.name)
+        put(KEY_SIDE_VOLUME_DOWN_ACTION, settings.sideVolumeDownAction.name)
+        put(KEY_SIDE_POWER_ACTION, settings.sidePowerAction.name)
     }
 
     /** Deserialize a remote-file snapshot, applying the same bounds and defaults as preferences. */
@@ -291,7 +316,23 @@ object SettingsStore {
         cursorLongPressMs = json.optLong(KEY_CURSOR_LONG_PRESS_MS, DEFAULT_CURSOR_LONG_PRESS_MS)
             .coerceIn(MIN_CURSOR_LONG_PRESS_MS, MAX_CURSOR_LONG_PRESS_MS),
         cursorRepeatIntervalMs = json.optLong(KEY_CURSOR_REPEAT_INTERVAL_MS, DEFAULT_CURSOR_REPEAT_INTERVAL_MS)
-            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS)
+            .coerceIn(MIN_CURSOR_REPEAT_INTERVAL_MS, MAX_CURSOR_REPEAT_INTERVAL_MS),
+        combinationEnabled = json.optBoolean(KEY_COMBINATION_ENABLED, false),
+        sideVolumeUpAction = enumValue(
+            optionalString(json, KEY_SIDE_VOLUME_UP_ACTION),
+            SideKeyCombinationAction.NONE,
+            "side volume-up combination action"
+        ),
+        sideVolumeDownAction = enumValue(
+            optionalString(json, KEY_SIDE_VOLUME_DOWN_ACTION),
+            SideKeyCombinationAction.NONE,
+            "side volume-down combination action"
+        ),
+        sidePowerAction = enumValue(
+            optionalString(json, KEY_SIDE_POWER_ACTION),
+            SideKeyCombinationAction.NONE,
+            "side power combination action"
+        )
     )
 
     private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T, description: String): T =

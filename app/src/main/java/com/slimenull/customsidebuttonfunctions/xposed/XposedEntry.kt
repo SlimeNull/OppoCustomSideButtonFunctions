@@ -207,11 +207,18 @@ internal object SideKeyModule {
 
         val controller = SideKeyController()
         val actionExecutor = ActionExecutor()
-        CursorControlController().install(lpparam)
         // Oplus routes its hardware shortcut through this vendor strategy before AOSP policy.
-        val hookInstalled = installOplusStrategyHook(lpparam, controller, actionExecutor)
-            || installPhoneWindowHook(lpparam, controller, actionExecutor)
-        if (!hookInstalled) {
+        val oplusHookInstalled = installOplusStrategyHook(lpparam, controller, actionExecutor)
+        val phoneHookInstalled = installPhoneWindowHook(
+            lpparam,
+            controller,
+            actionExecutor,
+            handleSideKey = !oplusHookInstalled
+        )
+        // Register cursor handling after combination handling so configured media chords win over
+        // the optional volume-key cursor feature.
+        CursorControlController().install(lpparam)
+        if (!oplusHookInstalled && !phoneHookInstalled) {
             XposedBridge.log("$TAG: framework key hook unavailable, starting raw input fallback")
             RawInputEventReader.start(controller, actionExecutor)
         }
@@ -273,7 +280,8 @@ internal object SideKeyModule {
     private fun installPhoneWindowHook(
         lpparam: PackageHookParam,
         controller: SideKeyController,
-        executor: ActionExecutor
+        executor: ActionExecutor,
+        handleSideKey: Boolean
     ): Boolean {
         val classNames = listOf(
             "com.android.server.policy.PhoneWindowManager",
@@ -295,6 +303,11 @@ internal object SideKeyModule {
                                 controller.cancel()
                                 return
                             }
+                            if (controller.onAuxiliaryKeyEvent(event, executor)) {
+                                param.setResult(0)
+                                return
+                            }
+                            if (!handleSideKey) return
                             if (!SettingsReader.matches(event, settings)) return
                             val context = runCatching {
                                 XposedHelpers.getObjectField(param.thisObject, "mContext") as? android.content.Context

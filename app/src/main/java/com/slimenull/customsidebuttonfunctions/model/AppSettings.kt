@@ -33,5 +33,13 @@ data class AppSettings(
     val cursorControlMode: CursorControlMode = CursorControlMode.DISABLED,
     val cursorLongPressAction: CursorLongPressAction = CursorLongPressAction.NONE,
     val cursorLongPressMs: Long = DEFAULT_CURSOR_LONG_PRESS_MS,
-    val cursorRepeatIntervalMs: Long = DEFAULT_CURSOR_REPEAT_INTERVAL_MS
-)
+    val cursorRepeatIntervalMs: Long = DEFAULT_CURSOR_REPEAT_INTERVAL_MS,
+    val combinationEnabled: Boolean = false,
+    val sideVolumeUpAction: SideKeyCombinationAction = SideKeyCombinationAction.NONE,
+    val sideVolumeDownAction: SideKeyCombinationAction = SideKeyCombinationAction.NONE,
+    val sidePowerAction: SideKeyCombinationAction = SideKeyCombinationAction.NONE
+) {
+    val hasConfiguredCombination: Boolean
+        get() = combinationEnabled && listOf(sideVolumeUpAction, sideVolumeDownAction, sidePowerAction)
+            .any { it != SideKeyCombinationAction.NONE }
+}

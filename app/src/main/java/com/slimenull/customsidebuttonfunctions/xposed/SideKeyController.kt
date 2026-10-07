@@ -8,6 +8,7 @@ import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.OperationMode
+import com.slimenull.customsidebuttonfunctions.model.SideKeyCombinationAction
 
 /** Thread-safe gesture state machine shared by framework and raw input sources. */
 internal class SideKeyController {
@@ -15,8 +16,11 @@ internal class SideKeyController {
     private val lock = Any()
     private var pressed = false
     private var longTriggered = false
+    private var longPressReached = false
     private var secondClick = false
     private var pendingSingle = false
+    private var combinationTriggered = false
+    private val combinationKeysDown = mutableSetOf<Int>()
     private var activeSettings = AppSettings()
     private var activeInteractive = true
     private var longRunnable: Runnable? = null
@@ -40,10 +44,43 @@ internal class SideKeyController {
         synchronized(lock) {
             pressed = false
             longTriggered = false
+            longPressReached = false
             resetClickState()
             longRunnable?.let(handler::removeCallbacks)
             longRunnable = null
+            combinationTriggered = false
+            combinationKeysDown.clear()
             resetMorseState()
+        }
+    }
+
+    /** Handles volume/power events while the side key is held for a configured combination. */
+    fun onAuxiliaryKeyEvent(event: KeyEvent, executor: ActionExecutor): Boolean {
+        synchronized(lock) {
+            if (!pressed || !activeSettings.hasConfiguredCombination) return false
+            val action = when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> activeSettings.sideVolumeUpAction
+                KeyEvent.KEYCODE_VOLUME_DOWN -> activeSettings.sideVolumeDownAction
+                KeyEvent.KEYCODE_POWER -> activeSettings.sidePowerAction
+                else -> SideKeyCombinationAction.NONE
+            }
+            if (action == SideKeyCombinationAction.NONE) return false
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (!combinationKeysDown.add(event.keyCode)) return true
+                    combinationTriggered = true
+                    longRunnable?.let(handler::removeCallbacks)
+                    longRunnable = null
+                    resetClickState()
+                    resetMorseState()
+                    executor.executeCombination(action)
+                    return true
+                }
+                KeyEvent.ACTION_UP -> {
+                    if (combinationKeysDown.remove(event.keyCode)) return true
+                }
+            }
+            return false
         }
     }
 
@@ -62,6 +99,9 @@ internal class SideKeyController {
             activeSettings = settings
             activeInteractive = interactive
             longTriggered = false
+            longPressReached = false
+            combinationTriggered = false
+            combinationKeysDown.clear()
             secondClick = pendingSingle
             if (secondClick) {
                 pendingSingle = false
@@ -76,15 +116,24 @@ internal class SideKeyController {
                             cancel()
                             return@synchronized
                         }
-                        longTriggered = true
-                        execute(
-                            activeSettings.longAction,
-                            activeSettings.longCustom,
-                            activeSettings,
-                            executor,
-                            activeInteractive,
-                            activeSettings.longWakeScreen
-                        )
+                        if (activeSettings.hasConfiguredCombination) {
+                            // Keep the side key pending so a later volume/power key can form a
+                            // combination. If no combination arrives, execute on side-key up.
+                            longPressReached = true
+                            if (activeSettings.vibrationEnabled && activeSettings.longAction != ActionType.NONE) {
+                                executor.vibrateInstantCue()
+                            }
+                        } else {
+                            longTriggered = true
+                            execute(
+                                activeSettings.longAction,
+                                activeSettings.longCustom,
+                                activeSettings,
+                                executor,
+                                activeInteractive,
+                                activeSettings.longWakeScreen
+                            )
+                        }
                     }
                 }
             }
@@ -100,6 +149,17 @@ internal class SideKeyController {
                 cancel()
                 return
             }
+            if (combinationTriggered) {
+                pressed = false
+                combinationTriggered = false
+                combinationKeysDown.clear()
+                longPressReached = false
+                longRunnable?.let(handler::removeCallbacks)
+                longRunnable = null
+                resetClickState()
+                resetMorseState()
+                return
+            }
             if (activeSettings.operationMode == OperationMode.MORSE) {
                 onMorseUp(executor, interactive)
                 return
@@ -108,6 +168,19 @@ internal class SideKeyController {
             longRunnable?.let(handler::removeCallbacks)
             longRunnable = null
             if (!longTriggered) activeInteractive = interactive
+            if (longPressReached) {
+                longPressReached = false
+                resetClickState()
+                execute(
+                    activeSettings.longAction,
+                    activeSettings.longCustom,
+                    activeSettings,
+                    executor,
+                    activeInteractive,
+                    activeSettings.longWakeScreen
+                )
+                return
+            }
             if (longTriggered) {
                 resetClickState()
                 return
@@ -200,7 +273,8 @@ internal class SideKeyController {
                         val hasLongerMatch = current.morseBindings.any {
                             it.sequence.length > sequence.length && it.sequence.startsWith(sequence)
                         }
-                        if (current.morseImmediateExecutionEnabled && binding != null && !hasLongerMatch) {
+                        if (current.morseImmediateExecutionEnabled && !current.hasConfiguredCombination &&
+                            binding != null && !hasLongerMatch) {
                             morseTriggeredWhilePressed = true
                             morseSequence.clear()
                             morseFinishRunnable?.let(handler::removeCallbacks)

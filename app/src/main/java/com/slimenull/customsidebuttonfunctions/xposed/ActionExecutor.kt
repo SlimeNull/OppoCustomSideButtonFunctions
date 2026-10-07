@@ -26,11 +26,13 @@ import android.os.Vibrator
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import android.view.KeyEvent
 import com.slimenull.customsidebuttonfunctions.model.ActionType
 import com.slimenull.customsidebuttonfunctions.model.AppSettings
 import com.slimenull.customsidebuttonfunctions.model.CommonAction
 import com.slimenull.customsidebuttonfunctions.model.CustomActionSettings
 import com.slimenull.customsidebuttonfunctions.model.DEFAULT_UNKNOWN_MORSE_TOAST
+import com.slimenull.customsidebuttonfunctions.model.SideKeyCombinationAction
 import com.slimenull.customsidebuttonfunctions.onXposedFailure
 import java.util.function.Consumer
 
@@ -99,6 +101,24 @@ internal class ActionExecutor {
         showToast(currentContext, settings.unknownMorseToastText.ifBlank { DEFAULT_UNKNOWN_MORSE_TOAST })
         vibrateInstant(currentContext)
         Handler(Looper.getMainLooper()).postDelayed({ vibrateInstantCue() }, 100L)
+    }
+
+    fun executeCombination(action: SideKeyCombinationAction) {
+        if (action == SideKeyCombinationAction.NONE) return
+        val currentContext = context ?: resolveSystemContext()?.also { context = it } ?: return
+        runCatching {
+            val keyCode = when (action) {
+                SideKeyCombinationAction.MEDIA_PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                SideKeyCombinationAction.MEDIA_NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+                SideKeyCombinationAction.MEDIA_PAUSE -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                SideKeyCombinationAction.NONE -> return@runCatching
+            }
+            val downTime = android.os.SystemClock.uptimeMillis()
+            val audio = currentContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audio.dispatchMediaKeyEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, keyCode, 0))
+            audio.dispatchMediaKeyEvent(KeyEvent(downTime, android.os.SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, keyCode, 0))
+            XposedBridge.log("CustomSideButtonFunctions: executed side-key combination action=$action")
+        }.onXposedFailure("execute side-key combination")
     }
 
     fun execute(
