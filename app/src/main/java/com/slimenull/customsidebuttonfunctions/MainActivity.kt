@@ -29,6 +29,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -47,6 +48,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -119,15 +122,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.slimenull.customsidebuttonfunctions.data.SettingsStore
@@ -461,12 +468,16 @@ private fun PrimaryPageLayer(
                 },
                 label = "Tab transition"
             ) { current ->
+                val actualPadding = object : PaddingValues by padding {
+                    override fun calculateBottomPadding(): Dp = 0.dp
+                }
+
                 RouteScreen(
                     route = current,
                     settings = settings,
                     navigate = navigate,
                     persist = persist,
-                    padding = padding
+                    padding = actualPadding
                 )
             }
         }
@@ -713,7 +724,23 @@ private fun GestureScreen(
                                 valueRange = 100f..800f,
                                 modifier = Modifier.weight(1f)
                             )
-                            ValuePill("${sliderValue.toLong()} ms")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TimeValueEditor(
+                                value = sliderValue.toLong(),
+                                minValue = 100L,
+                                maxValue = 800L,
+                                onChange = { value ->
+                                    sliderValue = value.toFloat()
+                                    clickSound(view)
+                                    persist(
+                                        if (kind == GestureKind.DOUBLE) {
+                                            settings.copy(doubleClickWindowMs = value)
+                                        } else {
+                                            settings.copy(longPressMs = value)
+                                        }
+                                    )
+                                }
+                            )
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("100ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
@@ -897,13 +924,17 @@ private fun MorseTimingCard(title: String, value: Long, onChange: (Long) -> Unit
                     valueRange = 100f..800f,
                     modifier = Modifier.weight(1f)
                 )
-                Box(
-                    Modifier.width(82.dp).height(38.dp)
-                        .background(Color(0xFFF3F7FC), RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("${sliderValue.toLong()} ms", style = MaterialTheme.typography.labelMedium)
-                }
+                Spacer(modifier = Modifier.width(4.dp))
+                TimeValueEditor(
+                    value = sliderValue.toLong(),
+                    minValue = 100L,
+                    maxValue = 800L,
+                    onChange = { newValue ->
+                        sliderValue = newValue.toFloat()
+                        clickSound(view)
+                        onChange(newValue)
+                    }
+                )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("100ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
@@ -1302,7 +1333,17 @@ private fun CursorTimingSetting(
                 valueRange = minValue.toFloat()..maxValue.toFloat(),
                 modifier = Modifier.weight(1f)
             )
-            ValuePill("${sliderValue.toLong()} $suffix")
+            Spacer(modifier = Modifier.width(4.dp))
+            TimeValueEditor(
+                value = sliderValue.toLong(),
+                minValue = minValue,
+                maxValue = maxValue,
+                suffix = suffix,
+                onChange = { newValue ->
+                    sliderValue = newValue.toFloat()
+                    onChange(newValue)
+                }
+            )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${minValue}ms", style = MaterialTheme.typography.labelSmall, color = AppMuted)
@@ -1688,10 +1729,52 @@ private fun InfoCard(text: String) {
 }
 
 @Composable
-private fun ValuePill(value: String) {
-    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F7FC))) {
-        Text(value, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge, color = AppText)
+private fun TimeValueEditor(
+    value: Long,
+    minValue: Long,
+    maxValue: Long,
+    suffix: String = "ms",
+    onChange: (Long) -> Unit
+) {
+    var text by remember(value) { mutableStateOf(value.coerceIn(minValue, maxValue).toString()) }
+    val focusManager = LocalFocusManager.current
+
+    fun commit() {
+        val committed = (text.toLongOrNull() ?: value).coerceIn(minValue, maxValue)
+        text = committed.toString()
+        if (committed != value) onChange(committed)
     }
+
+    BasicTextField(
+        value = text,
+        onValueChange = { input ->
+            text = input.filter(Char::isDigit).take(6)
+        },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.labelMedium.copy(color = AppText),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            commit()
+            focusManager.clearFocus()
+        }),
+        modifier = Modifier
+            .width(54.dp)
+            .height(32.dp)
+            .onFocusChanged { state -> if (!state.isFocused) commit() },
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFF3F7FC), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFFD6E1EC), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f)) { innerTextField() }
+                Text(suffix, style = MaterialTheme.typography.labelSmall, color = AppMuted)
+            }
+        }
+    )
 }
 
 @Composable
