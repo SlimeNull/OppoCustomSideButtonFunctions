@@ -2,10 +2,6 @@
 
 [简体中文](README.md) | **English**
 
-> [!Note]
-> This is a fork of https://github.com/SlimeNull/OppoCustomSideButtonFunctions
-> that just adds english translations (translations made by an llm)
-
 Configure actions for the side shortcut key on OnePlus, OPPO, and similar devices via Xposed/LSPosed. The app provides a Compose settings UI, while key interception and action execution mainly run inside the Android system framework process. The package name is `com.slimenull.customsidebuttonfunctions`.
 
 <div align="center">
